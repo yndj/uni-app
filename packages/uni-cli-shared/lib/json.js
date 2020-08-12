@@ -1,20 +1,24 @@
 const fs = require('fs')
 const path = require('path')
 const stripJsonComments = require('strip-json-comments')
-const preprocessor = require('@dcloudio/vue-cli-plugin-uni/packages/webpack-preprocess-loader/preprocess')
-const {
-  jsPreprocessOptions
-} = require('./platform')
 
 function parseJson (content, preprocess = false) {
   if (typeof content === 'string') {
     if (preprocess) {
+      const preprocessor = require('@dcloudio/vue-cli-plugin-uni/packages/webpack-preprocess-loader/preprocess')
+      const {
+        jsPreprocessOptions
+      } = require('./platform')
       content = preprocessor.preprocess(content, jsPreprocessOptions.context, {
         type: jsPreprocessOptions.type
       })
     }
 
-    content = JSON.parse(stripJsonComments(content))
+    try {
+      content = JSON.parse(stripJsonComments(content))
+    } catch (e) {
+      throw new Error('uni-app-compiler: ' + e.message)
+    }
   }
 
   content = JSON.stringify(content)

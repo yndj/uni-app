@@ -4,11 +4,15 @@ const {
   sassLoaderVersion
 } = require('@dcloudio/uni-cli-shared/lib/scss')
 
+const {
+  getPartialIdentifier
+} = require('./util')
+
 function resolve (dir) {
   return path.resolve(__dirname, '..', dir)
 }
 
-module.exports = function chainWebpack (platformOptions) {
+module.exports = function chainWebpack (platformOptions, vueOptions, api) {
   const {
     runByHBuilderX, // 使用 HBuilderX 运行
     cssPreprocessOptions
@@ -16,28 +20,22 @@ module.exports = function chainWebpack (platformOptions) {
 
   return function (webpackConfig) {
     // 处理静态资源 limit
-    webpackConfig.module
-      .rule('images')
-      .use('url-loader')
-      .loader('url-loader')
-      .tap(options => Object.assign(options, {
-        limit: 40960
-      }))
-
-    webpackConfig.module
-      .rule('fonts')
-      .use('url-loader')
-      .loader('url-loader')
-      .tap(options => Object.assign(options, {
-        limit: 40960
-      }))
+    const urlLoader = require('@dcloudio/uni-cli-shared/lib/url-loader')
+    const staticTypes = ['images', 'media', 'fonts']
+    staticTypes.forEach(staticType => {
+      webpackConfig.module
+        .rule(staticType)
+        .use('url-loader')
+        .loader(urlLoader.loader)
+        .tap(options => Object.assign(options, urlLoader.options()))
+    })
     // 条件编译 vue 文件统一直接过滤html,js,css三种类型,单独资源文件引用各自过滤
 
     const loaders = {
-      'scss': 'sass-loader',
-      'sass': 'sass-loader',
-      'less': 'less-loader',
-      'stylus': 'stylus-loader'
+      scss: 'sass-loader',
+      sass: 'sass-loader',
+      less: 'less-loader',
+      stylus: 'stylus-loader'
     }
     // 独立css,postcss,scss,sass,less,stylus
     const cssLang = ['css', 'postcss', 'scss', 'sass', 'less', 'stylus']
@@ -48,14 +46,25 @@ module.exports = function chainWebpack (platformOptions) {
       const langRule = webpackConfig.module.rule(lang)
       const loader = loaders[lang]
       cssTypes.forEach(type => {
+        if (process.env.UNI_USING_CACHE) {
+          langRule.oneOf(type)
+            .use('uniapp-cache-css')
+            .loader('cache-loader')
+            .options(api.genCacheConfig(
+              'css-loader/' + process.env.UNI_PLATFORM,
+              getPartialIdentifier()
+            ))
+            .before('css-loader')
+        }
         langRule.oneOf(type)
-          .use(`uniapp-preprocss`)
+          .use('uniapp-preprocss')
           .loader(resolve('packages/webpack-preprocess-loader'))
           .options(cssPreprocessOptions)
-          .before('css-loader') // 在 css-loader 之后条件编译一次，避免 import 进来的 css 没有走条件编译
-        if (loader) { // 在 scss,less,stylus 之前先条件编译一次
+          .after('css-loader') // 在 css-loader 之前条件编译一次
+
+        if (loader) { // 在 scss,less,stylus 之前先条件编译一次（似乎没有必要了，保证css-loader处理一次即可，前提是条件编译注释都还存在）
           langRule.oneOf(type)
-            .use(`uniapp-preprocss-` + lang)
+            .use('uniapp-preprocss-' + lang)
             .loader(resolve('packages/webpack-preprocess-loader'))
             .options(cssPreprocessOptions)
             .after(loader)
@@ -79,17 +88,41 @@ module.exports = function chainWebpack (platformOptions) {
       })
     }
 
-    platformOptions.chainWebpack(webpackConfig)
+    platformOptions.chainWebpack(webpackConfig, vueOptions, api)
     // define
+    const deferredCreated = process.env.UNI_PLATFORM === 'mp-toutiao' ||
+      process.env.UNI_PLATFORM === 'quickapp-webview'
+    const defines = {
+      __UNI_PROMISE_API__: JSON.stringify(process.env.UNI_USING_PROMISE_API === 'true'),
+      __VUE_OPTIONS_API__: JSON.stringify(process.env.UNI_USING_VUE3_OPTIONS_API === 'true'),
+      __VUE_CREATED_DEFERRED__: JSON.stringify(deferredCreated),
+      'process.env.UNI_ENV': JSON.stringify(process.env.UNI_PLATFORM),
+      'process.env.UNI_CLOUD_PROVIDER': process.env.UNI_CLOUD_PROVIDER,
+      'process.env.HBX_USER_TOKEN': JSON.stringify(process.env.HBX_USER_TOKEN || ''),
+      'process.env.UNI_AUTOMATOR_WS_ENDPOINT': JSON.stringify(process.env.UNI_AUTOMATOR_WS_ENDPOINT)
+    }
+
     webpackConfig
       .plugin('uni-define')
-      .use(require.resolve('webpack/lib/DefinePlugin'), [{
-        'process.env.UNI_ENV': JSON.stringify(process.env.UNI_PLATFORM)
-      }])
+      .use(require.resolve('webpack/lib/DefinePlugin'), [defines])
 
     if (runByHBuilderX) { // 由 HBuilderX 运行时，移除进度，错误
       webpackConfig.plugins.delete('progress')
       webpackConfig.plugins.delete('friendly-errors')
+    } else {
+      webpackConfig.plugin('friendly-errors')
+        .tap(args => {
+          if (global.__error_reporting__) {
+            args[0].onErrors = function (severity, errors) {
+              if (severity !== 'error') {
+                return
+              }
+              const error = errors[0]
+              global.__error_reporting__ && global.__error_reporting__(error.name, error.message || '')
+            }
+          }
+          return args
+        })
     }
     if (process.env.BUILD_ENV === 'ali-ide') {
       webpackConfig.plugins.delete('progress')

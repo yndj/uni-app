@@ -250,8 +250,10 @@ function processCss(css) {
 		.replace(BODY_SCOPED_RE, page)
 		.replace(BODY_RE, '')
 		.replace(PAGE_SCOPED_RE, 'body.' + page + ' uni-page-body')
-		.replace(UPX_RE, function(a, b) {
-			return uni.upx2px(b) + 'px'
+		.replace(/\{[\s\S]+?\}/g, function (css) {
+			return css.replace(UPX_RE, function (a, b) {
+				return uni.upx2px(b) + 'px'
+			})
 		})
 }
 
@@ -265,6 +267,7 @@ function getWindowOffset() {
 	if (app && app.$route && app.$route.meta && app.$route.meta.name) {
 		return {
 			top: app.$route.meta.windowTop,
+			// TODO 可配置 TabBar 高度
 			bottom: app.$route.meta.isTabBar ? 50 : 0
 		}
 	}

@@ -2,10 +2,6 @@ const {
   tags
 } = require('@dcloudio/uni-cli-shared')
 
-const {
-  isUnaryTag
-} = require('../util')
-
 const simplePathRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/
 
 function processEvent (expr, filterModules) {
@@ -17,11 +13,11 @@ $event = $handleWxsEvent($event);
 ${expr}($event, $getComponentDescriptor())
 `
     } else {
-      expr = expr + '($event)'
+      expr = expr + '(...arguments)'
     }
   }
   return `
-$event = $handleEvent($event);
+arguments[0] = $event = $handleEvent($event);
 ${expr}
 `
 }
@@ -32,8 +28,8 @@ function hasOwn (obj, key) {
 
 const deprecated = {
   events: {
-    'tap': 'click',
-    'longtap': 'longpress'
+    tap: 'click',
+    longtap: 'longpress'
   }
 }
 
@@ -45,12 +41,9 @@ function addTag (tag) {
 }
 
 module.exports = {
-  isUnaryTag,
-  preserveWhitespace: false,
+  h5: true,
   modules: [require('../format-text'), {
-    preTransformNode (el, {
-      warn
-    }) {
+    preTransformNode (el, options) {
       if (el.tag.indexOf('v-uni-') === 0) {
         addTag(el.tag.replace('v-uni-', ''))
       } else if (hasOwn(tags, el.tag)) {

@@ -1,17 +1,5 @@
 <template>
   <uni-textarea
-    :value="_checkEmpty(value)"
-    :maxlength="maxlengthNumber"
-    :placeholder="_checkEmpty(placeholder)"
-    :disabled="disabled"
-    :focus="focus"
-    :auto-focus="autoFocus"
-    :placeholder-class="_checkEmpty(placeholderClass)"
-    :placeholder-style="_checkEmpty(placeholderStyle)"
-    :auto-height="autoHeight"
-    :cursor="cursorNumber"
-    :selection-start="selectionStartNumber"
-    :selection-end="selectionEndNumber"
     @change.stop
     v-on="$listeners"
   >
@@ -22,22 +10,32 @@
         :style="placeholderStyle"
         :class="placeholderClass"
         class="uni-textarea-placeholder"
-      >{{ placeholder }}</div>
+        v-text="placeholder"
+      />
+      <div
+        ref="line"
+        class="uni-textarea-line"
+        v-text="' '"
+      />
       <div class="uni-textarea-compute">
         <div
           v-for="(item,index) in valueCompute"
-          :key="index">{{ item.trim() ? item : '.' }}</div>
+          :key="index"
+          v-text="item.trim() ? item : '.'"
+        />
         <v-uni-resize-sensor
           ref="sensor"
-          @resize="_resize"/>
+          @resize="_resize"
+        />
       </div>
       <textarea
         ref="textarea"
         v-model="valueSync"
         :disabled="disabled"
         :maxlength="maxlengthNumber"
-        :autofocus="autoFocus"
-        :class="{'uni-textarea-textarea-ios': isIOS}"
+        :autofocus="autoFocus || focus"
+        :class="{'uni-textarea-textarea-fix-margin': fixMargin}"
+        :style="{'overflow-y': autoHeight? 'hidden':'auto'}"
         class="uni-textarea-textarea"
         @compositionstart="_compositionstart"
         @compositionend="_compositionend"
@@ -51,22 +49,15 @@
 </template>
 <script>
 import {
-  emitter
+  baseInput
 } from 'uni-mixins'
+const DARK_TEST_STRING = '(prefers-color-scheme: dark)'
 export default {
   name: 'Textarea',
-  mixins: [emitter],
-  model: {
-    prop: 'value',
-    event: 'update:value'
-  },
+  mixins: [baseInput],
   props: {
     name: {
       type: String,
-      default: ''
-    },
-    value: {
-      type: [String, Number],
       default: ''
     },
     maxlength: {
@@ -91,7 +82,7 @@ export default {
     },
     placeholderClass: {
       type: String,
-      default: ''
+      default: 'textarea-placeholder'
     },
     placeholderStyle: {
       type: String,
@@ -116,13 +107,13 @@ export default {
   },
   data () {
     return {
-      valueSync: String(this.value),
       valueComposition: '',
       composition: false,
       focusSync: this.focus,
       height: 0,
       focusChangeSource: '',
-      isIOS: String(navigator.platform).indexOf('iP') === 0 && String(navigator.vendor).indexOf('Apple') === 0
+      // iOS 13 以下版本需要修正边距
+      fixMargin: String(navigator.platform).indexOf('iP') === 0 && String(navigator.vendor).indexOf('Apple') === 0 && window.matchMedia(DARK_TEST_STRING).media !== DARK_TEST_STRING
     }
   },
   computed: {
@@ -147,19 +138,6 @@ export default {
     }
   },
   watch: {
-    value (val) {
-      this.valueSync = String(val)
-    },
-    valueSync (val) {
-      if (val !== this._oldValue) {
-        this._oldValue = val
-        this.$trigger('input', {}, {
-          value: val,
-          cursor: this.$refs.textarea.selectionEnd
-        })
-        this.$emit('update:value', val)
-      }
-    },
     focus (val) {
       if (val) {
         this.focusChangeSource = 'focus'
@@ -187,7 +165,10 @@ export default {
       this._checkSelection()
     },
     height (height) {
-      const lineHeight = getComputedStyle(this.$el).lineHeight.replace('px', '')
+      let lineHeight = parseFloat(getComputedStyle(this.$el).lineHeight)
+      if (isNaN(lineHeight)) {
+        lineHeight = this.$refs.line.offsetHeight
+      }
       var lineCount = Math.round(height / lineHeight)
       this.$trigger('linechange', {}, {
         height,
@@ -206,10 +187,20 @@ export default {
     })
   },
   mounted () {
-    this._oldValue = this.$refs.textarea.value = this.valueSync
     this._resize({
       height: this.$refs.sensor.$el.offsetHeight
     })
+
+    let $vm = this
+    while ($vm) {
+      const scopeId = $vm.$options._scopeId
+      if (scopeId) {
+        this.$refs.placeholder.setAttribute(scopeId, '')
+      }
+      $vm = $vm.$parent
+    }
+
+    this.initKeyboard(this.$refs.textarea)
   },
   beforeDestroy () {
     this.$dispatch('Form', 'uni-form-group-update', {
@@ -268,7 +259,12 @@ export default {
     _input ($event) {
       if (this.composition) {
         this.valueComposition = $event.target.value
+        return
       }
+      this.$triggerInput($event, {
+        value: this.valueSync,
+        cursor: this.$refs.textarea.selectionEnd
+      })
     },
     _getFormData () {
       return {
@@ -278,9 +274,6 @@ export default {
     },
     _resetFormData () {
       this.valueSync = ''
-    },
-    _checkEmpty (str) {
-      return str || false
     }
   }
 }
@@ -294,15 +287,15 @@ uni-textarea {
   position: relative;
   font-size: 16px;
   line-height: normal;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 uni-textarea[hidden] {
   display: none;
 }
-uni-textarea[auto-height] .uni-textarea-textarea {
-  overflow-y: hidden;
-}
 .uni-textarea-wrapper,
 .uni-textarea-placeholder,
+.uni-textarea-line,
 .uni-textarea-compute,
 .uni-textarea-textarea {
   outline: none;
@@ -318,6 +311,7 @@ uni-textarea[auto-height] .uni-textarea-textarea {
   height: 100%;
 }
 .uni-textarea-placeholder,
+.uni-textarea-line,
 .uni-textarea-compute,
 .uni-textarea-textarea {
   position: absolute;
@@ -325,16 +319,20 @@ uni-textarea[auto-height] .uni-textarea-textarea {
   height: 100%;
   left: 0;
   top: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: inherit;
+  word-break: inherit;
 }
 .uni-textarea-placeholder {
   color: grey;
   overflow: hidden;
 }
+.uni-textarea-line,
 .uni-textarea-compute {
   visibility: hidden;
   height: auto;
+}
+.uni-textarea-line {
+  width: 1em;
 }
 .uni-textarea-textarea {
   resize: none;
@@ -351,7 +349,7 @@ uni-textarea[auto-height] .uni-textarea-textarea {
   text-shadow: inherit;
 }
 /* 用于解决 iOS textarea 内部默认边距 */
-.uni-textarea-textarea-ios {
+.uni-textarea-textarea-fix-margin {
   width: auto;
   right: 0;
   margin: 0 -3px;

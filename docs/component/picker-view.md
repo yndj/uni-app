@@ -1,6 +1,8 @@
 #### picker-view
 
-嵌入页面的滚动选择器
+嵌入页面的滚动选择器。
+
+相对于`picker`组件，`picker-view`拥有更强的灵活性。当需要对自定义选择的弹出方式和UI表现时，往往需要使用`picker-view`。
 
 **属性说明**
 
@@ -8,10 +10,12 @@
 |:-|:-|:-|:-|
 |value|Array＜Number＞|数组中的数字依次表示 picker-view 内的 picker-view-column 选择的第几项（下标从 0 开始），数字大于 picker-view-column 可选项长度时，选择最后一项。||
 |indicator-style|String|设置选择器中间选中框的样式||
-|indicator-class|String|设置选择器中间选中框的类名|app-nvue和头条小程序不支持|
+|indicator-class|String|设置选择器中间选中框的类名|app-nvue和字节跳动小程序不支持|
 |mask-style|String|设置蒙层的样式||
-|mask-class|String|设置蒙层的类名|app-nvue和头条小程序不支持|
+|mask-class|String|设置蒙层的类名|app-nvue和字节跳动小程序不支持|
 |@change|EventHandle|当滚动选择，value 改变时触发 change 事件，event.detail = {value: value}；value为数组，表示 picker-view 内的 picker-view-column 当前选择的是第几项（下标从 0 开始）|&nbsp;|
+|@pickstart|eventhandle||当滚动选择开始时候触发事件|微信小程序2.3.1|
+|@pickend|eventhandle||当滚动选择结束时候触发事件|微信小程序2.3.1|
 
 **注意：**其中只可放置 `<picker-view-column/>` 组件，其他节点不会显示。
 
@@ -19,9 +23,11 @@
 
 `<picker-view />` 的子组件，仅可放置于 `<picker-view />` 中，其子节点的高度会自动设置成与 picker-view 的选中框的高度一致
 
-**示例** [查看演示](https://uniapp.dcloud.io/h5/pages/component/picker-view/picker-view)
+**示例** [查看演示](https://hellouniapp.dcloud.net.cn/pages/component/picker-view/picker-view)
 
+以下示例代码，来自于[hello uni-app项目](https://github.com/dcloudio/hello-uniapp)，推荐使用HBuilderX，新建uni-app项目，选择hello uni-app模板，可直接体验完整示例。
 ```html
+<!-- 本示例未包含完整css，获取外链css请参考上文，在hello uni-app项目中查看 -->
 <template>
     <view>
         <view class="uni-padding-wrap">
@@ -89,4 +95,4 @@ export default {
 
 **Tips**
 - 微信小程序端，滚动时在iOS自带振动反馈，可在系统设置 -> 声音与触感 -> 系统触感反馈中关闭
-- 如果需要在PC端使用`picker-view`，可以配置[H5模版](https://uniapp.dcloud.io/collocation/manifest?id=h5-template)，并引入[touch-emulator.js](https://github.com/dcloudio/touchemulator)
+- 在2.6.3版本以前，如果需要在PC端使用`picker-view`，需配置[H5模版](https://uniapp.dcloud.io/collocation/manifest?id=h5-template)，并引入[touch-emulator.js](https://github.com/dcloudio/touchemulator)

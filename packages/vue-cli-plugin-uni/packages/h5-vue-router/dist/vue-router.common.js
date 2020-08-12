@@ -1,6 +1,6 @@
 /*!
   * vue-router v3.0.1
-  * (c) 2019 Evan You
+  * (c) 2020 Evan You
   * @license MIT
   */
 'use strict';
@@ -1325,7 +1325,6 @@ function normalizeLocation (
 /*  */
 
 
-
 function createMatcher (
   routes,
   router
@@ -1495,7 +1494,7 @@ function createMatcher (
       if (record.meta.id) {
         record.components.default.name = record.meta.name + '-' + location.params.__id__;
       } else {
-        record = Object.assign({}, record);
+        record = extend({}, record);
         record.components = {
           'default': {
             name: record.meta.name + '-' + location.params.__id__,
@@ -2284,13 +2283,8 @@ var HTML5History = (function (History$$1) {
     if (getLocation(this.base) !== this.current.fullPath) {
       var current = cleanPath(this.base + this.current.fullPath);
       // fixed by xxxxxx
-      var location = {
-        path: current,
-        params: {
-          __id__: this.current.params.__id__
-        }
-      };
-      push ? pushState(location, location.params.__id__) : replaceState(location, location.params.__id__);
+      var id = this.current.params.__id__;
+      push ? pushState(current, id) : replaceState(current, id);
     }
   };
 
@@ -2311,7 +2305,7 @@ function getLocation (base) {
   if (base && path.indexOf(base) === 0) {
     path = path.slice(base.length);
   }
-  return (path || '/') + window.location.search + window.location.hash
+  return (path || '/') + stringifyQuery(resolveQuery(window.location.search)) + window.location.hash
 }
 
 /*  */

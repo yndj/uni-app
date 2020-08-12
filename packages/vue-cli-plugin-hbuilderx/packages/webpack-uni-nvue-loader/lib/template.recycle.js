@@ -1,9 +1,9 @@
 const loaderUtils = require('loader-utils')
-module.exports = function(content) {
+module.exports = function (content, map) {
   this.cacheable && this.cacheable()
 
-  const vueLoaderOptions = this.loaders[0]
-  if (vueLoaderOptions.ident === 'vue-loader-options') {
+  const vueLoaderOptions = this.loaders.find(loader => loader.ident === 'vue-loader-options')
+  if (vueLoaderOptions) {
     const params = loaderUtils.parseQuery(this.resourceQuery)
     if (params.recyclable) {
       Object.assign(vueLoaderOptions.options.compilerOptions, {
@@ -14,5 +14,5 @@ module.exports = function(content) {
     throw new Error('vue-loader-options parse error')
   }
 
-  return content
+  this.callback(null, content, map)
 }

@@ -1,6 +1,6 @@
 /*!
- * Vue.js v2.6.10
- * (c) 2014-2019 Evan You
+ * Vue.js v2.6.11
+ * (c) 2014-2020 Evan You
  * Released under the MIT License.
  */
 (function (global, factory) {
@@ -636,6 +636,9 @@
 
     formatComponentName = function (vm, includeFile) {
       if (vm.$root === vm) {
+        if (vm.$options && vm.$options.__file) { // fixed by xxxxxx
+          return ('at ') + vm.$options.__file
+        }
         return '<Root>'
       }
       var options = typeof vm === 'function' && vm.cid != null
@@ -670,7 +673,7 @@
       if (vm._isVue && vm.$parent) {
         var tree = [];
         var currentRecursiveSequence = 0;
-        while (vm) {
+        while (vm && vm.$options.name !== 'PageBody') {
           if (tree.length > 0) {
             var last = tree[tree.length - 1];
             if (last.constructor === vm.constructor) {
@@ -682,7 +685,7 @@
               currentRecursiveSequence = 0;
             }
           }
-          tree.push(vm);
+          !vm.$options.isReserved && tree.push(vm);
           vm = vm.$parent;
         }
         return '\n\nfound in\n\n' + tree
@@ -705,7 +708,13 @@
    * directives subscribing to it.
    */
   var Dep = function Dep () {
-    this.id = uid++;
+    // fixed by xxxxxx (nvue vuex)
+    /* eslint-disable no-undef */
+    if(typeof SharedObject !== 'undefined'){
+      this.id = SharedObject.uid++;
+    } else {
+      this.id = uid++;
+    }
     this.subs = [];
   };
 
@@ -1965,7 +1974,7 @@
     isUsingMicroTask = true;
   } else if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) {
     // Fallback to setImmediate.
-    // Techinically it leverages the (macro) task queue,
+    // Technically it leverages the (macro) task queue,
     // but it is still a better choice than setTimeout.
     timerFunc = function () {
       setImmediate(flushCallbacks);
@@ -2031,7 +2040,7 @@
       warn(
         "Property \"" + key + "\" must be accessed with \"$data." + key + "\" because " +
         'properties starting with "$" or "_" are not proxied in the Vue instance to ' +
-        'prevent conflicts with Vue internals' +
+        'prevent conflicts with Vue internals. ' +
         'See: https://vuejs.org/v2/api/#data',
         target
       );
@@ -2264,17 +2273,48 @@
 
   /*  */
 
+  // fixed by xxxxxx (mp properties)
+  function extractPropertiesFromVNodeData(data, Ctor, res, context) {
+    var propOptions = Ctor.options.mpOptions && Ctor.options.mpOptions.properties;
+    if (isUndef(propOptions)) {
+      return res
+    }
+    var externalClasses = Ctor.options.mpOptions.externalClasses || [];
+    var attrs = data.attrs;
+    var props = data.props;
+    if (isDef(attrs) || isDef(props)) {
+      for (var key in propOptions) {
+        var altKey = hyphenate(key);
+        var result = checkProp(res, props, key, altKey, true) ||
+            checkProp(res, attrs, key, altKey, false);
+        // externalClass
+        if (
+          result &&
+          res[key] &&
+          externalClasses.indexOf(altKey) !== -1 &&
+          context[camelize(res[key])]
+        ) {
+          // 赋值 externalClass 真正的值(模板里 externalClass 的值可能是字符串)
+          res[key] = context[camelize(res[key])];
+        }
+      }
+    }
+    return res
+  }
+
   function extractPropsFromVNodeData (
     data,
     Ctor,
-    tag
+    tag,
+    context// fixed by xxxxxx
   ) {
     // we are only extracting raw values here.
     // validation and default values are handled in the child
     // component itself.
     var propOptions = Ctor.options.props;
     if (isUndef(propOptions)) {
-      return
+      // fixed by xxxxxx
+      return extractPropertiesFromVNodeData(data, Ctor, {}, context)
     }
     var res = {};
     var attrs = data.attrs;
@@ -2302,7 +2342,8 @@
         checkProp(res, attrs, key, altKey, false);
       }
     }
-    return res
+    // fixed by xxxxxx
+    return extractPropertiesFromVNodeData(data, Ctor, res, context)
   }
 
   function checkProp (
@@ -2635,12 +2676,12 @@
     if (Array.isArray(val) || typeof val === 'string') {
       ret = new Array(val.length);
       for (i = 0, l = val.length; i < l; i++) {
-        ret[i] = render(val[i], i);
+        ret[i] = render(val[i], i, i, i); // fixed by xxxxxx
       }
     } else if (typeof val === 'number') {
       ret = new Array(val);
       for (i = 0; i < val; i++) {
-        ret[i] = render(i + 1, i);
+        ret[i] = render(i + 1, i, i, i); // fixed by xxxxxx
       }
     } else if (isObject(val)) {
       if (hasSymbol && val[Symbol.iterator]) {
@@ -2648,7 +2689,7 @@
         var iterator = val[Symbol.iterator]();
         var result = iterator.next();
         while (!result.done) {
-          ret.push(render(result.value, ret.length));
+          ret.push(render(result.value, ret.length, i++, i)); // fixed by xxxxxx
           result = iterator.next();
         }
       } else {
@@ -2656,7 +2697,7 @@
         ret = new Array(keys.length);
         for (i = 0, l = keys.length; i < l; i++) {
           key = keys[i];
-          ret[i] = render(val[key], key, i);
+          ret[i] = render(val[key], key, i, i); // fixed by xxxxxx
         }
       }
     }
@@ -2691,7 +2732,8 @@
         }
         props = extend(extend({}, bindObject), props);
       }
-      nodes = scopedSlotFn(props) || fallback;
+      // fixed by xxxxxx app-plus scopedSlot
+      nodes = scopedSlotFn(props, this, props._i) || fallback;
     } else {
       nodes = this.$slots[name] || fallback;
     }
@@ -2919,7 +2961,7 @@
       if (typeof key === 'string' && key) {
         baseObj[values[i]] = values[i + 1];
       } else if (key !== '' && key !== null) {
-        // null is a speical value for explicitly removing a binding
+        // null is a special value for explicitly removing a binding
         warn(
           ("Invalid value for dynamic directive argument (expected string or null): " + key),
           this
@@ -3143,6 +3185,8 @@
       var context = vnode.context;
       var componentInstance = vnode.componentInstance;
       if (!componentInstance._isMounted) {
+        callHook(componentInstance, 'onServiceCreated');
+        callHook(componentInstance, 'onServiceAttached');
         componentInstance._isMounted = true;
         callHook(componentInstance, 'mounted');
       }
@@ -3232,7 +3276,7 @@
     }
 
     // extract props
-    var propsData = extractPropsFromVNodeData(data, Ctor, tag);
+    var propsData = extractPropsFromVNodeData(data, Ctor, tag, context); // fixed by xxxxxx
 
     // functional component
     if (isTrue(Ctor.options.functional)) {
@@ -3414,6 +3458,12 @@
       ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
       if (config.isReservedTag(tag)) {
         // platform built-in elements
+        if (isDef(data) && isDef(data.nativeOn)) {
+          warn(
+            ("The .native modifier for v-on is only valid on components but it was used on <" + tag + ">."),
+            context
+          );
+        }
         vnode = new VNode(
           config.parsePlatformTagName(tag), data, children,
           undefined, undefined, context
@@ -3539,7 +3589,7 @@
       // render self
       var vnode;
       try {
-        // There's no need to maintain a stack becaues all render fns are called
+        // There's no need to maintain a stack because all render fns are called
         // separately from one another. Nested component's render fns are called
         // when parent component is patched.
         currentRenderingInstance = vm;
@@ -4078,6 +4128,9 @@
     // manually mounted instance, call mounted on self
     // mounted is called for render-created child components in its inserted hook
     if (vm.$vnode == null) {
+      // fixed by xxxxxx
+      callHook(vm, 'onServiceCreated');
+      callHook(vm, 'onServiceAttached');
       vm._isMounted = true;
       callHook(vm, 'mounted');
     }
@@ -4146,7 +4199,10 @@
       // keep a copy of raw propsData
       vm.$options.propsData = propsData;
     }
-
+    
+    // fixed by xxxxxx update properties(mp runtime)
+    vm._$updateProperties && vm._$updateProperties(vm);
+    
     // update listeners
     listeners = listeners || emptyObject;
     var oldListeners = vm.$options._parentListeners;
@@ -4991,10 +5047,10 @@
       initEvents(vm);
       initRender(vm);
       callHook(vm, 'beforeCreate');
-      vm.mpHost !== 'mp-toutiao' && initInjections(vm); // resolve injections before data/props  
+      !vm._$fallback && initInjections(vm); // resolve injections before data/props  
       initState(vm);
-      vm.mpHost !== 'mp-toutiao' && initProvide(vm); // resolve provide after data/props
-      vm.mpHost !== 'mp-toutiao' && callHook(vm, 'created');      
+      !vm._$fallback && initProvide(vm); // resolve provide after data/props
+      !vm._$fallback && callHook(vm, 'created');      
 
       /* istanbul ignore if */
       if (config.performance && mark) {
@@ -5438,7 +5494,7 @@
     value: FunctionalRenderContext
   });
 
-  Vue.version = '2.6.10';
+  Vue.version = '2.6.11';
 
   /*  */
 
@@ -6109,7 +6165,7 @@
       }
     }
 
-    function removeVnodes (parentElm, vnodes, startIdx, endIdx) {
+    function removeVnodes (vnodes, startIdx, endIdx) {
       for (; startIdx <= endIdx; ++startIdx) {
         var ch = vnodes[startIdx];
         if (isDef(ch)) {
@@ -6220,7 +6276,7 @@
         refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm;
         addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
       } else if (newStartIdx > newEndIdx) {
-        removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
+        removeVnodes(oldCh, oldStartIdx, oldEndIdx);
       }
     }
 
@@ -6312,7 +6368,7 @@
           if (isDef(oldVnode.text)) { nodeOps.setTextContent(elm, ''); }
           addVnodes(elm, null, ch, 0, ch.length - 1, insertedVnodeQueue);
         } else if (isDef(oldCh)) {
-          removeVnodes(elm, oldCh, 0, oldCh.length - 1);
+          removeVnodes(oldCh, 0, oldCh.length - 1);
         } else if (isDef(oldVnode.text)) {
           nodeOps.setTextContent(elm, '');
         }
@@ -6541,7 +6597,7 @@
 
           // destroy old node
           if (isDef(parentElm)) {
-            removeVnodes(parentElm, [oldVnode], 0, 0);
+            removeVnodes([oldVnode], 0, 0);
           } else if (isDef(oldVnode.tag)) {
             invokeDestroyHook(oldVnode);
           }
@@ -6712,13 +6768,21 @@
     vnode.$wxsWatches = {};
 
     Object.keys(wxsProps).forEach(function (prop) {
-      vnode.$wxsWatches[prop] = oldWxsWatches[prop] || vnode.context.$watch(prop, function(newVal, oldVal) {
+      // app-plus view wxs
+      var watchProp = prop;
+      if (vnode.context.wxsProps) {
+        watchProp = 'wxsProps.' + prop;
+      }
+
+      vnode.$wxsWatches[prop] = oldWxsWatches[prop] || vnode.context.$watch(watchProp, function(newVal, oldVal) {
         wxsProps[prop](
           newVal,
           oldVal,
-          context.$getComponentDescriptor(),
-          vnode.elm.__vue__.$getComponentDescriptor()
+          context.$getComponentDescriptor(context, true),
+          vnode.elm.__vue__.$getComponentDescriptor(vnode.elm.__vue__, false)
         );
+      }, {
+        deep: true
       });
     });
 
@@ -6887,7 +6951,17 @@
       });
       cls = Object.keys(clsObj).join(' ');
     }
-
+    // fixed by xxxxxx (仅 h5 平台 extenalClasses)
+    var context = vnode.context;
+    var externalClasses = context.$options.mpOptions &&
+      context.$options.mpOptions.externalClasses;
+    if (Array.isArray(externalClasses)) {
+      externalClasses.forEach(function (externalClass) {
+        // 简单替换 externalClass
+        var externalClassValue = context[camelize(externalClass)];
+        externalClassValue && (cls = cls.replace(externalClass, externalClassValue));
+      });
+    }
     // set the class
     if (cls !== el._prevClass) {
       el.setAttribute('class', cls);
@@ -7230,7 +7304,22 @@
     return val
   };
 
-  var setProp = function (el, name, val) {
+  var urlRE = /url\(\s*'?"?([a-zA-Z0-9\.\-\_\/]+\.(jpg|gif|png))"?'?\s*\)/;
+
+  var transformUrl = function (val, ctx) {
+    if (typeof val === 'string' && val.indexOf('url(') !== -1) {
+      var matches = val.match(urlRE);
+      if (matches && matches.length === 3) {
+          val = val.replace(matches[1], ctx._$getRealPath(matches[1]));
+      }
+    }
+    return val
+  };
+
+  var setProp = function (el, name, val, ctx) {
+    if(ctx && ctx._$getRealPath && val){
+      val = transformUrl(val, ctx);
+    }
     /* istanbul ignore if */
     if (cssVarRE.test(name)) {
       el.style.setProperty(name, val);
@@ -7281,7 +7370,7 @@
     }
 
     var cur, name;
-    
+
     var oldStaticStyle = oldData.staticStyle;
     var oldStyleBinding = oldData.normalizedStyle || oldData.style || {};
 
@@ -7314,7 +7403,7 @@
       cur = newStyle[name];
       if (cur !== oldStyle[name]) {
         // ie9 setting to null has no effect, must use empty string
-        setProp(el, name, cur == null ? '' : cur);
+        setProp(el, name, cur == null ? '' : cur, vnode.context);
       }
     }
   }
@@ -8511,7 +8600,7 @@
         }
     }
     if (vm._hasHookEvent) {
-        vm.$emit('hook:' + hook);
+        vm.$emit('hook:' + hook, args);
     }
     popTarget();
     return ret

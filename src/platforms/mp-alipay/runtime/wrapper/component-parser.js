@@ -73,7 +73,7 @@ function initVm (VueComponent) {
 }
 
 export default function parseComponent (vueComponentOptions) {
-  let [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions)
+  const [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions)
 
   const properties = initProperties(vueOptions.props, false, vueOptions.__file)
 
@@ -92,7 +92,13 @@ export default function parseComponent (vueComponentOptions) {
     data: initData(vueOptions, Vue.prototype),
     props,
     didMount () {
-      initVm.call(this, VueComponent)
+      if (my.dd) { // 钉钉小程序底层基础库有 bug,组件嵌套使用时,在 didMount 中无法及时调用 props 中的方法
+        setTimeout(() => {
+          initVm.call(this, VueComponent)
+        }, 4)
+      } else {
+        initVm.call(this, VueComponent)
+      }
 
       initSpecialMethods(this)
 
@@ -103,7 +109,7 @@ export default function parseComponent (vueComponentOptions) {
       }
     },
     didUnmount () {
-      this.$vm.$destroy()
+      this.$vm && this.$vm.$destroy()
     },
     methods: {
       __r: handleRef,
@@ -120,6 +126,14 @@ export default function parseComponent (vueComponentOptions) {
     componentOptions.deriveDataFromProps = createObserver()
   } else {
     componentOptions.didUpdate = createObserver(true)
+  }
+
+  if (Array.isArray(vueOptions.wxsCallMethods)) {
+    vueOptions.wxsCallMethods.forEach(callMethod => {
+      componentOptions.methods[callMethod] = function (args) {
+        return this.$vm[callMethod](args)
+      }
+    })
   }
 
   return componentOptions

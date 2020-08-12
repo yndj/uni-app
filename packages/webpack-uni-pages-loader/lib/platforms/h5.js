@@ -2,16 +2,21 @@ const fs = require('fs')
 const path = require('path')
 
 const {
+  hasOwn,
   getPlatforms,
   getH5Options,
   getFlexDirection,
-  getNetworkTimeout
+  getNetworkTimeout,
+  normalizePath
 } = require('@dcloudio/uni-cli-shared')
 
-const PLATFORMS = getPlatforms()
+const {
+  addPageUsingComponents
+} = require('@dcloudio/uni-cli-shared/lib/pages')
 
-const isWin = /^win/.test(process.platform)
-const normalizePath = path => (isWin ? path.replace(/\\/g, '/') : path)
+const compilerVersion = require('@dcloudio/webpack-uni-pages-loader/package.json')['uni-app'].compilerVersion
+
+const PLATFORMS = getPlatforms()
 
 const removePlatformStyle = function (style) {
   Object.keys(style).forEach(name => {
@@ -56,11 +61,21 @@ const getPageComponents = function (inputDir, pagesJson) {
     pagesJson.tabBar.borderStyle = pagesJson.tabBar.borderStyle || 'black'
   }
 
-  const globalStyle = pagesJson.globalStyle || {}
+  const globalStyle = Object.assign({}, pagesJson.globalStyle || {})
+
+  Object.assign(
+    globalStyle,
+    globalStyle['app-plus'] || {},
+    globalStyle.h5 || {}
+  )
+
+  if (process.env.UNI_SUB_PLATFORM) {
+    Object.assign(globalStyle, globalStyle[process.env.UNI_SUB_PLATFORM] || {})
+  }
 
   process.UNI_H5_PAGES_JSON = {
     pages: {},
-    globalStyle: Object.assign({}, globalStyle, globalStyle['app-plus'] || {}, globalStyle['h5'] || {})
+    globalStyle
   }
 
   removePlatformStyle(process.UNI_H5_PAGES_JSON.globalStyle)
@@ -80,29 +95,54 @@ const getPageComponents = function (inputDir, pagesJson) {
       }
     }
     // 解析 titleNView，pullToRefresh
-    const h5Options = Object.assign({}, props['app-plus'] || {}, props['h5'] || {})
+    const h5Options = Object.assign({}, props['app-plus'] || {}, props.h5 || {})
+
+    if (process.env.UNI_SUB_PLATFORM) {
+      Object.assign(h5Options, props[process.env.UNI_SUB_PLATFORM] || {})
+      Object.assign(props, props[process.env.UNI_SUB_PLATFORM] || {})
+    }
 
     removePlatformStyle(h5Options)
 
-    if (h5Options.hasOwnProperty('titleNView')) {
+    if (hasOwn(h5Options, 'titleNView')) {
       props.titleNView = h5Options.titleNView
     }
-    if (h5Options.hasOwnProperty('pullToRefresh')) {
+    if (hasOwn(h5Options, 'pullToRefresh')) {
       props.pullToRefresh = h5Options.pullToRefresh
     }
 
     let windowTop = 44
-    let pageStyle = Object.assign({}, globalStyle, props)
-    if (pageStyle.navigationStyle === 'custom' || !pageStyle.titleNView || pageStyle.titleNView.type ===
-        'transparent' || pageStyle.titleNView.type === 'float') {
+    const pageStyle = Object.assign({}, globalStyle, props)
+    const titleNViewTypeList = {
+      none: 'default',
+      auto: 'transparent',
+      always: 'float'
+    }
+    let titleNView = pageStyle.titleNView
+    titleNView = Object.assign({}, {
+      type: pageStyle.navigationStyle === 'custom' ? 'none' : 'default'
+    }, pageStyle.transparentTitle in titleNViewTypeList ? {
+      type: titleNViewTypeList[pageStyle.transparentTitle],
+      backgroundColor: 'rgba(0,0,0,0)'
+    } : null, typeof titleNView === 'object' ? titleNView : (typeof titleNView === 'boolean' ? {
+      type: titleNView ? 'default' : 'none'
+    } : null))
+    if (titleNView.type === 'none' || titleNView.type === 'transparent') {
       windowTop = 0
     }
 
     // 删除 app-plus 平台配置
     delete props['app-plus']
-    delete props['h5']
+    delete props.h5
+
+    if (process.env.UNI_SUB_PLATFORM) {
+      delete props[process.env.UNI_SUB_PLATFORM]
+    }
 
     process.UNI_H5_PAGES_JSON.pages[page.path] = props
+
+    // 缓存usingComponents
+    addPageUsingComponents(page.path, props.usingComponents)
 
     return {
       name,
@@ -289,11 +329,57 @@ meta:{
   ]
 }
 
-module.exports = function (pagesJson, manifestJson) {
+function filterPages (pagesJson, includes) {
+  const pages = []
+  let subPackages = pagesJson.subPackages || []
+  if (!Array.isArray(subPackages)) {
+    subPackages = []
+  }
+  includes.forEach(includePagePath => {
+    let page = pagesJson.pages.find(page => page.path === includePagePath)
+    if (!page) {
+      for (let i = 0; i < subPackages.length; i++) {
+        const {
+          root,
+          pages: subPages
+        } = subPackages[i]
+        page = subPages.find(subPage => normalizePath(path.join(root, subPage.path)) === includePagePath)
+        if (page) {
+          break
+        }
+      }
+    }
+    if (!page) {
+      console.error(`${includePagePath} is not found`)
+    }
+    pages.push(page)
+  })
+  pagesJson.pages = pages
+}
+
+module.exports = function (pagesJson, manifestJson, loader) {
   const inputDir = process.env.UNI_INPUT_DIR
+
+  global.uniPlugin.configurePages.forEach(configurePages => {
+    configurePages(pagesJson, manifestJson, loader)
+  })
+
+  if (loader.resourceQuery) {
+    const loaderUtils = require('loader-utils')
+    const params = loaderUtils.parseQuery(loader.resourceQuery)
+    if (params.pages) {
+      try {
+        const pages = JSON.parse(params.pages)
+        if (Array.isArray(pages)) {
+          filterPages(pagesJson, pages)
+        }
+      } catch (e) {}
+    }
+  }
 
   const pageComponents = getPageComponents(inputDir, pagesJson)
 
+  pagesJson.globalStyle = process.UNI_H5_PAGES_JSON.globalStyle
   delete pagesJson.pages
   delete pagesJson.subPackages
 
@@ -317,14 +403,18 @@ import Vue from 'vue'
 global['____${h5.appid}____'] = true;
 delete global['____${h5.appid}____'];
 global.__uniConfig = ${JSON.stringify(pagesJson)};
+global.__uniConfig.compilerVersion = '${compilerVersion}';
 global.__uniConfig.router = ${JSON.stringify(h5.router)};
-global.__uniConfig['async'] = ${JSON.stringify(h5['async'])};
+global.__uniConfig.publicPath = ${JSON.stringify(h5.publicPath)};
+global.__uniConfig['async'] = ${JSON.stringify(h5.async)};
 global.__uniConfig.debug = ${manifestJson.debug === true};
 global.__uniConfig.networkTimeout = ${JSON.stringify(networkTimeoutConfig)};
 global.__uniConfig.sdkConfigs = ${JSON.stringify(sdkConfigs)};
 global.__uniConfig.qqMapKey = ${JSON.stringify(qqMapKey)};
 global.__uniConfig.nvue = ${JSON.stringify({ 'flex-direction': getFlexDirection(manifestJson['app-plus']) })}
+global.__uniConfig.__webpack_chunk_load__ = __webpack_chunk_load__
 ${genRegisterPageVueComponentsCode(pageComponents)}
 global.__uniRoutes=[${genPageRoutes(pageComponents).concat(genSystemRoutes()).join(',')}]
+global.UniApp && new global.UniApp();
 `
 }

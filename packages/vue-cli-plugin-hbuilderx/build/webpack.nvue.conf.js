@@ -1,16 +1,21 @@
+const fs = require('fs')
 const path = require('path')
 const webpack = require('webpack')
-const VueLoaderPlugin = require('vue-loader/lib/plugin')
+const VueLoaderPlugin = require('@dcloudio/vue-cli-plugin-uni/packages/vue-loader/lib/plugin')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
+const TerserPlugin = require('terser-webpack-plugin')
 
 const {
   getNVueMainEntry,
   nvueJsPreprocessOptions,
   nvueHtmlPreprocessOptions,
-  devtoolModuleFilenameTemplate
+  getTemplatePath
 } = require('@dcloudio/uni-cli-shared')
 
-const WebpackAppPlusNVuePlugin = require('../packages/webpack-app-plus-nvue-plugin')
+const WebpackAppPlusNVuePlugin = process.env.UNI_USING_V3
+  ? require('../packages/webpack-app-plus-plugin')
+  : require('../packages/webpack-app-plus-nvue-plugin')
+
 const WebpackErrorsPlugin = require('@dcloudio/vue-cli-plugin-uni/packages/webpack-errors-plugin')
 const WebpackUniMPPlugin = require('@dcloudio/webpack-uni-mp-loader/lib/plugin/index-new')
 
@@ -34,29 +39,50 @@ const uniPath = process.env.UNI_USING_V8
   ? '../packages/uni-app-plus-nvue-v8/dist/index.js'
   : '../packages/uni-app-plus-nvue/dist/index.js'
 
-const provide = {}
+const uniCloudPath = require.resolve('@dcloudio/vue-cli-plugin-uni/packages/uni-cloud/dist/index.js')
 
-if (!process.env.UNI_USING_NATIVE) {
-  provide['uni'] = [path.resolve(__dirname, uniPath), 'default']
+const provide = {
+  uniCloud: [uniCloudPath, 'default']
 }
 
-if (process.env.UNI_USING_V8) {
-  provide['plus'] = [path.resolve(__dirname, uniPath), 'weexPlus']
+if (
+  process.env.UNI_USING_V3 ||
+  process.env.UNI_USING_NATIVE ||
+  process.env.UNI_USING_V3_NATIVE
+) {
+  provide['uni.getCurrentSubNVue'] = [path.resolve(__dirname,
+    '../packages/uni-app-plus-nvue/dist/get-current-sub-nvue.js'), 'default']
+  provide['uni.requireNativePlugin'] = [path.resolve(__dirname,
+    '../packages/uni-app-plus-nvue/dist/require-native-plugin.js'), 'default']
+}
+
+if (!process.env.UNI_USING_V3 && !process.env.UNI_USING_V3_NATIVE) {
+  if (!process.env.UNI_USING_NATIVE) {
+    provide.uni = [path.resolve(__dirname, uniPath), 'default']
+  }
+
+  if (process.env.UNI_USING_V8) {
+    provide.plus = [path.resolve(__dirname, uniPath), 'weexPlus']
+  }
 }
 
 if (
   process.env.UNI_PLATFORM === 'app-plus' &&
   process.env.UNI_USING_V8
 ) {
-  provide['__f__'] = [require.resolve('@dcloudio/vue-cli-plugin-uni/lib/format-log.js'), 'default']
+  provide.__f__ = [require.resolve('@dcloudio/vue-cli-plugin-uni/lib/format-log.js'), 'default']
+  provide.crypto = [require.resolve('@dcloudio/vue-cli-plugin-uni/lib/crypto.js'), 'default']
 }
 
 const plugins = [
   new VueLoaderPlugin(),
   new webpack.DefinePlugin({
     'process.env': {
-      'NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-      'VUE_APP_PLATFORM': JSON.stringify(process.env.UNI_PLATFORM)
+      NODE_ENV: JSON.stringify(process.env.NODE_ENV),
+      VUE_APP_PLATFORM: JSON.stringify(process.env.UNI_PLATFORM),
+      UNI_CLOUD_PROVIDER: process.env.UNI_CLOUD_PROVIDER,
+      HBX_USER_TOKEN: JSON.stringify(process.env.HBX_USER_TOKEN || ''),
+      UNI_AUTOMATOR_WS_ENDPOINT: JSON.stringify(process.env.UNI_AUTOMATOR_WS_ENDPOINT)
     }
   }),
   new webpack.BannerPlugin({
@@ -72,7 +98,11 @@ const plugins = [
   new WebpackAppPlusNVuePlugin()
 ]
 
-const excludeModuleReg = /node_modules(?!(\/|\\).*(weex).*)/
+if (process.env.NODE_ENV === 'development') {
+  plugins.push(require('@dcloudio/uni-cli-shared/lib/source-map').createEvalSourceMapDevToolPlugin())
+}
+
+// const excludeModuleReg = /node_modules(?!(\/|\\).*(weex).*)/
 
 const rules = [{
   test: path.resolve(process.env.UNI_INPUT_DIR, 'pages.json'),
@@ -94,26 +124,17 @@ const rules = [{
     }
   },
   jsPreprocessorLoader
-  ],
-  exclude (modulePath) {
-    return excludeModuleReg.test(modulePath) && modulePath.indexOf('@dcloudio') === -1
-  }
+  ]
+  // exclude (modulePath) { // nvue js均提供babel，否则还得提供transpileDependencies配置
+  //   return excludeModuleReg.test(modulePath) && modulePath.indexOf('@dcloudio') === -1
+  // }
 },
 {
-  test: /\.nvue(\?[^?]+)?$/,
+  test: [/\.nvue(\?[^?]+)?$/, /\.vue(\?[^?]+)?$/],
   use: [{
-    loader: path.resolve(__dirname, '../packages/vue-loader'),
+    loader: require.resolve('@dcloudio/vue-cli-plugin-uni/packages/vue-loader'),
     options: vueLoaderOptions
-  }],
-  exclude: excludeModuleReg
-},
-{
-  test: /\.vue(\?[^?]+)?$/,
-  use: [{
-    loader: path.resolve(__dirname, '../packages/vue-loader'),
-    options: vueLoaderOptions
-  }],
-  exclude: excludeModuleReg
+  }]
 },
 {
   test: /\.pug$/,
@@ -138,13 +159,15 @@ const rules = [{
 }
 ].concat(cssLoaders)
 
-if (process.env.UNI_USING_NVUE_COMPILER) {
+if (process.env.UNI_USING_NVUE_COMPILER || process.env.UNI_USING_V3_NATIVE) {
   rules.unshift({
     resourceQuery: function (query) {
       return query.indexOf('vue&type=template') !== -1 && query.indexOf('mpType=page') !== -1
     },
     use: [{
       loader: '@dcloudio/vue-cli-plugin-hbuilderx/packages/webpack-uni-nvue-loader/lib/template'
+    }, {
+      loader: '@dcloudio/vue-cli-plugin-uni/packages/webpack-uni-app-loader/page-meta'
     }]
   })
 }
@@ -157,54 +180,107 @@ rules.unshift({
   }]
 })
 
-if (process.env.UNI_USING_NATIVE) {
+if (process.env.UNI_USING_V3_NATIVE) {
+  try {
+    const automatorJson = require.resolve('@dcloudio/uni-automator/dist/automator.json')
+    plugins.push(new CopyWebpackPlugin([{
+      from: automatorJson,
+      to: '../.automator/' + (process.env.UNI_SUB_PLATFORM || process.env.UNI_PLATFORM) +
+        '/.automator.json',
+      transform (content) {
+        if (process.env.UNI_AUTOMATOR_WS_ENDPOINT) {
+          return JSON.stringify({
+            version: require('@dcloudio/uni-automator/package.json').version,
+            wsEndpoint: process.env.UNI_AUTOMATOR_WS_ENDPOINT
+          })
+        }
+        return ''
+      }
+    }]))
+  } catch (e) {}
+}
+
+if (process.env.UNI_USING_NATIVE || process.env.UNI_USING_V3_NATIVE) {
   plugins.push(new WebpackUniMPPlugin())
-  plugins.push(new CopyWebpackPlugin([{
+  const array = [{
     from: path.resolve(process.env.UNI_INPUT_DIR, 'static'),
     to: 'static'
-  }, {
-    from: path.resolve(
-      process.env.UNI_HBUILDERX_PLUGINS,
-      'weapp-tools/template/v8'
-    ),
-    to: process.env.UNI_OUTPUT_DIR
-  }, {
-    from: path.resolve(
-      process.env.UNI_HBUILDERX_PLUGINS,
-      'weapp-tools/template/common'
-    ),
-    to: process.env.UNI_OUTPUT_DIR,
-    ignore: [
-      '*.js',
-      '*.json',
-      '__uniapppicker.html',
-      '__uniappview.html'
-    ]
-  }]))
+  }]
+  const hybridHtmlPath = path.resolve(process.env.UNI_INPUT_DIR, 'hybrid/html')
+  if (fs.existsSync(hybridHtmlPath)) {
+    array.push({
+      from: hybridHtmlPath,
+      to: 'hybrid/html'
+    })
+  }
+  if (process.env.UNI_USING_NVUE_COMPILER) {
+    array.push({
+      from: path.resolve(getTemplatePath(), 'common'),
+      to: process.env.UNI_OUTPUT_DIR
+    })
+  } else if (process.env.UNI_USING_V3_NATIVE) {
+    array.push({
+      from: path.resolve(getTemplatePath(), 'weex'),
+      to: process.env.UNI_OUTPUT_DIR
+    })
+  } else {
+    let nativeTemplatePath = path.resolve(process.env.UNI_HBUILDERX_PLUGINS, 'weapp-tools/template/v8-native')
+    if (!fs.existsSync(nativeTemplatePath)) { // 兼容旧版本
+      nativeTemplatePath = path.resolve(
+        process.env.UNI_HBUILDERX_PLUGINS,
+        'weapp-tools/template/v8'
+      )
+    }
+    array.push({
+      from: nativeTemplatePath,
+      to: process.env.UNI_OUTPUT_DIR
+    }, {
+      from: path.resolve(
+        process.env.UNI_HBUILDERX_PLUGINS,
+        'weapp-tools/template/common'
+      ),
+      to: process.env.UNI_OUTPUT_DIR,
+      ignore: [
+        '*.js',
+        '*.json',
+        '__uniapppicker.html',
+        '__uniappview.html'
+      ]
+    })
+  }
+  plugins.push(new CopyWebpackPlugin(array))
 }
 
 module.exports = function () {
   return {
     target: 'node', // 激活 vue-loader 的 isServer 逻辑
     mode: process.env.NODE_ENV,
-    devtool: process.env.NODE_ENV === 'development' ? 'inline-source-map' : false,
+    devtool: false,
     watch: process.env.NODE_ENV === 'development',
     entry () {
       return process.UNI_NVUE_ENTRY
     },
     externals: {
-      'vue': 'Vue'
+      vue: 'Vue'
     },
     performance: {
       hints: false
     },
     optimization: {
-      namedModules: false
+      namedModules: false,
+      minimizer: [
+        new TerserPlugin({
+          terserOptions: {
+            output: {
+              ascii_only: true
+            }
+          }
+        })
+      ]
     },
     output: {
       path: process.env.UNI_OUTPUT_DIR,
-      filename: '[name].js',
-      devtoolModuleFilenameTemplate
+      filename: '[name].js'
     },
     resolve: {
       extensions: ['.js', '.nvue', '.vue', '.json'],

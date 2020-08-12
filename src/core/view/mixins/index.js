@@ -17,3 +17,18 @@ export {
   default as subscriber
 }
   from './subscriber'
+
+export {
+  default as keyboard
+}
+  from './keyboard'
+
+export {
+  default as baseInput
+}
+  from './base-input'
+
+export {
+  default as interact
+}
+  from './interact'

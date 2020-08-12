@@ -52,7 +52,7 @@ class ComponentDescriptor {
       return
     }
     const el = this.$el.querySelector(selector)
-    return el && el.__vue__ && createComponentDescriptor(el.__vue__)
+    return el && el.__vue__ && createComponentDescriptor(el.__vue__, false)
   }
 
   selectAllComponents (selector) {
@@ -60,9 +60,11 @@ class ComponentDescriptor {
       return []
     }
     const descriptors = []
-    this.$el.querySelectorAll(selector).forEach(el => {
-      el.__vue__ && descriptors.push(createComponentDescriptor(el.__vue__))
-    })
+    const els = this.$el.querySelectorAll(selector)
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i]
+      el.__vue__ && descriptors.push(createComponentDescriptor(el.__vue__, false))
+    }
     return descriptors
   }
 
@@ -123,13 +125,27 @@ class ComponentDescriptor {
     return this.$el && this.$el.classList.contains(cls)
   }
 
+  getComputedStyle () {
+    if (this.$el) {
+      return window.getComputedStyle(this.$el)
+    }
+    return {}
+  }
+
   getDataset () {
     return this.$el && this.$el.dataset
   }
 
   callMethod (funcName, args = {}) {
-    // TODO 需跨平台
-    return (this.$vm[funcName] && this.$vm[funcName](JSON.parse(JSON.stringify(args))), this)
+    if (this.$vm[funcName]) {
+      this.$vm[funcName](JSON.parse(JSON.stringify(args)))
+    } else if (this.$vm._$id) {
+      UniViewJSBridge.publishHandler('onWxsInvokeCallMethod', {
+        cid: this.$vm._$id,
+        method: funcName,
+        args
+      })
+    }
   }
 
   requestAnimationFrame (callback) {
@@ -146,9 +162,9 @@ class ComponentDescriptor {
   }
 }
 
-export function createComponentDescriptor (vm) {
-  if (vm && vm.$options.name && vm.$options.name.indexOf('VUni') === 0) {
-    // 内置组件需要使用父 vm
+export function createComponentDescriptor (vm, isOwnerInstance = true) {
+  if (isOwnerInstance && vm && vm.$options.name && vm.$options.name.indexOf('VUni') === 0) {
+    // ownerInstance 内置组件需要使用父 vm
     vm = vm.$parent
   }
   if (vm && vm.$el) {

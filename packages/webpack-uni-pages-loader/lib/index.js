@@ -29,7 +29,7 @@ function checkEmitFile (filePath, jsonObj, changedEmitFiles) {
   }
 }
 
-module.exports = function (content) {
+module.exports = function (content, map) {
   if (this.resourceQuery) {
     const params = loaderUtils.parseQuery(this.resourceQuery)
     if (params) {
@@ -41,8 +41,12 @@ module.exports = function (content) {
     }
   }
 
-  if (process.env.UNI_USING_COMPONENTS || process.env.UNI_PLATFORM === 'h5') {
-    return require('./index-new').call(this, content)
+  if (
+    process.env.UNI_USING_COMPONENTS ||
+    process.env.UNI_PLATFORM === 'h5' ||
+    process.env.UNI_PLATFORM === 'quickapp-native'
+  ) {
+    return require('./index-new').call(this, content, map)
   }
 
   this.cacheable && this.cacheable()
@@ -94,5 +98,5 @@ module.exports = function (content) {
     this.emitFile(name + '.json', emitFileCaches[name])
   })
 
-  return ''
+  this.callback(null, '', map)
 }

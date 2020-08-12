@@ -1,7 +1,8 @@
 import {
   isFn,
   cached,
-  camelize
+  camelize,
+  hasOwn
 } from 'uni-shared'
 
 import {
@@ -58,6 +59,10 @@ export function initSpecialMethods (mpInstance) {
     specialMethods.forEach(method => {
       if (isFn(mpInstance.$vm[method])) {
         mpInstance[method] = function (event) {
+          if (hasOwn(event, 'markerId')) {
+            event.detail = typeof event.detail === 'object' ? event.detail : {}
+            event.detail.markerId = event.markerId
+          }
           // TODO normalizeEvent
           mpInstance.$vm[method](event)
         }
@@ -112,7 +117,7 @@ export function handleRef (ref) {
   if (refName) {
     this.$vm.$refs[refName] = ref.$vm || ref
   } else if (refInForName) {
-    this.$vm.$refs[refInForName] = [ref.$vm || ref]
+    (this.$vm.$refs[refInForName] || (this.$vm.$refs[refInForName] = [])).push(ref.$vm || ref)
   }
 }
 
@@ -123,10 +128,12 @@ export function triggerEvent (type, detail, options) {
   }
 
   const eventOpts = this.props['data-event-opts']
+  const eventParams = this.props['data-event-params']
 
   const target = {
     dataset: {
-      eventOpts
+      eventOpts,
+      eventParams
     }
   }
 

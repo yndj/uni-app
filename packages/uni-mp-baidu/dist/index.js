@@ -134,7 +134,7 @@ function queue (hooks, data) {
   for (let i = 0; i < hooks.length; i++) {
     const hook = hooks[i];
     if (promise) {
-      promise = Promise.then(wrapperHook(hook));
+      promise = Promise.resolve(wrapperHook(hook));
     } else {
       const res = hook(data);
       if (isPromise(res)) {
@@ -231,21 +231,27 @@ const promiseInterceptor = {
 };
 
 const SYNC_API_RE =
-  /^\$|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64/;
+  /^\$|sendNativeEvent|restoreGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64/;
 
 const CONTEXT_API_RE = /^create|Manager$/;
 
-const CALLBACK_API_RE = /^on/;
+// Context例外情况
+const CONTEXT_API_RE_EXC = ['createBLEConnection'];
+
+// 同步例外情况
+const ASYNC_API = ['createBLEConnection'];
+
+const CALLBACK_API_RE = /^on|^off/;
 
 function isContextApi (name) {
-  return CONTEXT_API_RE.test(name)
+  return CONTEXT_API_RE.test(name) && CONTEXT_API_RE_EXC.indexOf(name) === -1
 }
 function isSyncApi (name) {
-  return SYNC_API_RE.test(name)
+  return SYNC_API_RE.test(name) && ASYNC_API.indexOf(name) === -1
 }
 
 function isCallbackApi (name) {
-  return CALLBACK_API_RE.test(name)
+  return CALLBACK_API_RE.test(name) && name !== 'onPush'
 }
 
 function handlePromise (promise) {
@@ -266,6 +272,19 @@ function shouldPromise (name) {
   return true
 }
 
+/* eslint-disable no-extend-native */
+if (!Promise.prototype.finally) {
+  Promise.prototype.finally = function (callback) {
+    const promise = this.constructor;
+    return this.then(
+      value => promise.resolve(callback()).then(() => value),
+      reason => promise.resolve(callback()).then(() => {
+        throw reason
+      })
+    )
+  };
+}
+
 function promisify (name, api) {
   if (!shouldPromise(name)) {
     return api
@@ -279,18 +298,6 @@ function promisify (name, api) {
         success: resolve,
         fail: reject
       }), ...params);
-      /* eslint-disable no-extend-native */
-      if (!Promise.prototype.finally) {
-        Promise.prototype.finally = function (callback) {
-          const promise = this.constructor;
-          return this.then(
-            value => promise.resolve(callback()).then(() => value),
-            reason => promise.resolve(callback()).then(() => {
-              throw reason
-            })
-          )
-        };
-      }
     })))
   }
 }
@@ -329,9 +336,9 @@ function upx2px (number, newDeviceWidth) {
   result = Math.floor(result + EPS);
   if (result === 0) {
     if (deviceDPR === 1 || !isIOS) {
-      return 1
+      result = 1;
     } else {
-      return 0.5
+      result = 0.5;
     }
   }
   return number < 0 ? -result : result
@@ -341,13 +348,12 @@ const interceptors = {
   promiseInterceptor
 };
 
-
-
 var baseApi = /*#__PURE__*/Object.freeze({
+  __proto__: null,
   upx2px: upx2px,
-  interceptors: interceptors,
   addInterceptor: addInterceptor,
-  removeInterceptor: removeInterceptor
+  removeInterceptor: removeInterceptor,
+  interceptors: interceptors
 });
 
 var previewImage = {
@@ -386,37 +392,39 @@ var previewImage = {
 
 // 不支持的 API 列表
 const todos = [
-  'hideKeyboard',
-  'onGyroscopeChange',
-  'startGyroscope',
-  'stopGyroscope',
-  'openBluetoothAdapter',
-  'startBluetoothDevicesDiscovery',
-  'onBluetoothDeviceFound',
-  'stopBluetoothDevicesDiscovery',
-  'onBluetoothAdapterStateChange',
-  'getConnectedBluetoothDevices',
-  'getBluetoothDevices',
-  'getBluetoothAdapterState',
-  'closeBluetoothAdapter',
-  'writeBLECharacteristicValue',
-  'readBLECharacteristicValue',
-  'onBLEConnectionStateChange',
-  'onBLECharacteristicValueChange',
-  'notifyBLECharacteristicValueChange',
-  'getBLEDeviceServices',
-  'getBLEDeviceCharacteristics',
-  'createBLEConnection',
-  'closeBLEConnection',
-  'onBeaconServiceChange',
-  'onBeaconUpdate',
-  'getBeacons',
-  'startBeaconDiscovery',
-  'stopBeaconDiscovery',
-  'hideShareMenu',
-  'onWindowResize',
-  'offWindowResize',
-  'vibrate'
+  'preloadPage',
+  'unPreloadPage'
+  // 'hideKeyboard',
+  // 'onGyroscopeChange',
+  // 'startGyroscope',
+  // 'stopGyroscope',
+  // 'openBluetoothAdapter',
+  // 'startBluetoothDevicesDiscovery',
+  // 'onBluetoothDeviceFound',
+  // 'stopBluetoothDevicesDiscovery',
+  // 'onBluetoothAdapterStateChange',
+  // 'getConnectedBluetoothDevices',
+  // 'getBluetoothDevices',
+  // 'getBluetoothAdapterState',
+  // 'closeBluetoothAdapter',
+  // 'writeBLECharacteristicValue',
+  // 'readBLECharacteristicValue',
+  // 'onBLEConnectionStateChange',
+  // 'onBLECharacteristicValueChange',
+  // 'notifyBLECharacteristicValueChange',
+  // 'getBLEDeviceServices',
+  // 'getBLEDeviceCharacteristics',
+  // 'createBLEConnection',
+  // 'closeBLEConnection',
+  // 'onBeaconServiceChange',
+  // 'onBeaconUpdate',
+  // 'getBeacons',
+  // 'startBeaconDiscovery',
+  // 'stopBeaconDiscovery',
+  // 'hideShareMenu',
+  // 'onWindowResize',
+  // 'offWindowResize',
+  // 'vibrate'
 ];
 
 // 存在兼容性的 API 列表
@@ -511,7 +519,7 @@ function processArgs (methodName, fromArgs, argsOption = {}, returnValue = {}, k
     if (isFn(argsOption)) {
       argsOption = argsOption(fromArgs, toArgs) || {};
     }
-    for (let key in fromArgs) {
+    for (const key in fromArgs) {
       if (hasOwn(argsOption, key)) {
         let keyOption = argsOption[key];
         if (isFn(keyOption)) {
@@ -525,7 +533,9 @@ function processArgs (methodName, fromArgs, argsOption = {}, returnValue = {}, k
           toArgs[keyOption.name ? keyOption.name : key] = keyOption.value;
         }
       } else if (CALLBACKS.indexOf(key) !== -1) {
-        toArgs[key] = processCallback(methodName, fromArgs[key], returnValue);
+        if (isFn(fromArgs[key])) {
+          toArgs[key] = processCallback(methodName, fromArgs[key], returnValue);
+        }
       } else {
         if (!keepFromArgs) {
           toArgs[key] = fromArgs[key];
@@ -635,14 +645,11 @@ function getProvider ({
 }
 
 var extraApi = /*#__PURE__*/Object.freeze({
+  __proto__: null,
   getProvider: getProvider
 });
 
 const getEmitter = (function () {
-  if (typeof getUniEmitter === 'function') {
-    /* eslint-disable no-undef */
-    return getUniEmitter
-  }
   let Emitter;
   return function getUniEmitter () {
     if (!Emitter) {
@@ -670,6 +677,7 @@ function $emit () {
 }
 
 var eventApi = /*#__PURE__*/Object.freeze({
+  __proto__: null,
   $on: $on,
   $off: $off,
   $once: $once,
@@ -695,6 +703,7 @@ function requestPayment (params) {
 }
 
 var api = /*#__PURE__*/Object.freeze({
+  __proto__: null,
   requestPayment: requestPayment
 });
 
@@ -741,6 +750,8 @@ Component = function (options = {}) {
 const PAGE_EVENT_HOOKS = [
   'onPullDownRefresh',
   'onReachBottom',
+  'onAddToFavorites',
+  'onShareTimeline',
   'onShareAppMessage',
   'onPageScroll',
   'onResize',
@@ -803,10 +814,10 @@ function initVueComponent (Vue, vueOptions) {
   let VueComponent;
   if (isFn(vueOptions)) {
     VueComponent = vueOptions;
-    vueOptions = VueComponent.extendOptions;
   } else {
     VueComponent = Vue.extend(vueOptions);
   }
+  vueOptions = VueComponent.options;
   return [VueComponent, vueOptions]
 }
 
@@ -875,14 +886,14 @@ function createObserver (name) {
 }
 
 function initBehaviors (vueOptions, initBehavior) {
-  const vueBehaviors = vueOptions['behaviors'];
-  const vueExtends = vueOptions['extends'];
-  const vueMixins = vueOptions['mixins'];
+  const vueBehaviors = vueOptions.behaviors;
+  const vueExtends = vueOptions.extends;
+  const vueMixins = vueOptions.mixins;
 
-  let vueProps = vueOptions['props'];
+  let vueProps = vueOptions.props;
 
   if (!vueProps) {
-    vueOptions['props'] = vueProps = [];
+    vueOptions.props = vueProps = [];
   }
 
   const behaviors = [];
@@ -894,11 +905,11 @@ function initBehaviors (vueOptions, initBehavior) {
           vueProps.push('name');
           vueProps.push('value');
         } else {
-          vueProps['name'] = {
+          vueProps.name = {
             type: String,
             default: ''
           };
-          vueProps['value'] = {
+          vueProps.value = {
             type: [String, Number, Boolean, Array, Object, Date],
             default: ''
           };
@@ -958,6 +969,11 @@ function initProperties (props, isBehavior = false, file = '') {
       type: String,
       value: ''
     };
+    // 用于字节跳动小程序模拟抽象节点
+    properties.generic = {
+      type: Object,
+      value: null
+    };
     properties.vueSlots = { // 小程序不能直接定义 $slots 的 props，所以通过 vueSlots 转换到 $slots
       type: null,
       value: [],
@@ -983,7 +999,7 @@ function initProperties (props, isBehavior = false, file = '') {
     Object.keys(props).forEach(key => {
       const opts = props[key];
       if (isPlainObject(opts)) { // title:{type:String,default:''}
-        let value = opts['default'];
+        let value = opts.default;
         if (isFn(value)) {
           value = value();
         }
@@ -1022,6 +1038,11 @@ function wrapper$1 (event) {
     event.detail = {};
   }
 
+  if (hasOwn(event, 'markerId')) {
+    event.detail = typeof event.detail === 'object' ? event.detail : {};
+    event.detail.markerId = event.markerId;
+  }
+
   { // mp-baidu，checked=>value
     if (
       isPlainObject(event.detail) &&
@@ -1048,7 +1069,18 @@ function getExtraValue (vm, dataPathsArray) {
       const propPath = dataPathArray[1];
       const valuePath = dataPathArray[3];
 
-      const vFor = dataPath ? vm.__get_value(dataPath, context) : context;
+      let vFor;
+      if (Number.isInteger(dataPath)) {
+        vFor = dataPath;
+      } else if (!dataPath) {
+        vFor = context;
+      } else if (typeof dataPath === 'string' && dataPath) {
+        if (dataPath.indexOf('#s#') === 0) {
+          vFor = dataPath.substr(3);
+        } else {
+          vFor = vm.__get_value(dataPath, context);
+        }
+      }
 
       if (Number.isInteger(vFor)) {
         context = value;
@@ -1098,6 +1130,12 @@ function processEventExtra (vm, extra, event) {
         } else {
           if (dataPath === '$event') { // $event
             extraObj['$' + index] = event;
+          } else if (dataPath === 'arguments') {
+            if (event.detail && event.detail.__args__) {
+              extraObj['$' + index] = event.detail.__args__;
+            } else {
+              extraObj['$' + index] = [event];
+            }
           } else if (dataPath.indexOf('$event.') === 0) { // $event.target.value
             extraObj['$' + index] = vm.__get_value(dataPath.replace('$event.', ''), event);
           } else {
@@ -1178,17 +1216,26 @@ function isMatchEventType (eventType, optType) {
     )
 }
 
+function getContextVm (vm) {
+  let $parent = vm.$parent;
+  // 父组件是 scoped slots 或者其他自定义组件时继续查找
+  while ($parent && $parent.$parent && ($parent.$options.generic || $parent.$parent.$options.generic || $parent.$scope._$vuePid)) {
+    $parent = $parent.$parent;
+  }
+  return $parent && $parent.$parent
+}
+
 function handleEvent (event) {
   event = wrapper$1(event);
 
   // [['tap',[['handle',[1,2,a]],['handle1',[1,2,a]]]]]
   const dataset = (event.currentTarget || event.target).dataset;
   if (!dataset) {
-    return console.warn(`事件信息不存在`)
+    return console.warn('事件信息不存在')
   }
   const eventOpts = dataset.eventOpts || dataset['event-opts']; // 支付宝 web-view 组件 dataset 非驼峰
   if (!eventOpts) {
-    return console.warn(`事件信息不存在`)
+    return console.warn('事件信息不存在')
   }
 
   // [['handle',[1,2,a]],['handle1',[1,2,a]]]
@@ -1210,12 +1257,20 @@ function handleEvent (event) {
         const methodName = eventArray[0];
         if (methodName) {
           let handlerCtx = this.$vm;
-          if (
-            handlerCtx.$options.generic &&
-            handlerCtx.$parent &&
-            handlerCtx.$parent.$parent
-          ) { // mp-weixin,mp-toutiao 抽象节点模拟 scoped slots
-            handlerCtx = handlerCtx.$parent.$parent;
+          if (handlerCtx.$options.generic) { // mp-weixin,mp-toutiao 抽象节点模拟 scoped slots
+            handlerCtx = getContextVm(handlerCtx) || handlerCtx;
+          }
+          if (methodName === '$emit') {
+            handlerCtx.$emit.apply(handlerCtx,
+              processEventArgs(
+                this.$vm,
+                event,
+                eventArray[1],
+                eventArray[2],
+                isCustom,
+                methodName
+              ));
+            return
           }
           const handler = handlerCtx[methodName];
           if (!isFn(handler)) {
@@ -1227,14 +1282,17 @@ function handleEvent (event) {
             }
             handler.once = true;
           }
-          ret.push(handler.apply(handlerCtx, processEventArgs(
+          const params = processEventArgs(
             this.$vm,
             event,
             eventArray[1],
             eventArray[2],
             isCustom,
             methodName
-          )));
+          ) || [];
+          // 参数尾部增加原始事件对象用于复杂表达式内获取额外数据
+          // eslint-disable-next-line no-sparse-arrays
+          ret.push(handler.apply(handlerCtx, params.concat([, , , , , , , , , , event])));
         }
       });
     }
@@ -1253,7 +1311,9 @@ const hooks = [
   'onShow',
   'onHide',
   'onError',
-  'onPageNotFound'
+  'onPageNotFound',
+  'onThemeChange',
+  'onUnhandledRejection'
 ];
 
 function parseBaseApp (vm, {
@@ -1304,6 +1364,8 @@ function parseBaseApp (vm, {
       };
 
       this.$vm.$scope = this;
+      // vm 上也挂载 globalData
+      this.$vm.globalData = this.globalData;
 
       this.$vm._isMounted = true;
       this.$vm.__call_hook('mounted', args);
@@ -1314,6 +1376,13 @@ function parseBaseApp (vm, {
 
   // 兼容旧版本 globalData
   appOptions.globalData = vm.$options.globalData || {};
+  // 将 methods 中的方法挂在 getApp() 中
+  const methods = vm.$options.methods;
+  if (methods) {
+    Object.keys(methods).forEach(name => {
+      appOptions[name] = methods[name];
+    });
+  }
 
   initHooks(appOptions, hooks);
 
@@ -1322,12 +1391,15 @@ function parseBaseApp (vm, {
 
 function findVmByVueId (vm, vuePid) {
   const $children = vm.$children;
-  // 优先查找直属
-  let parentVm = $children.find(childVm => childVm.$scope._$vueId === vuePid);
-  if (parentVm) {
-    return parentVm
+  // 优先查找直属(反向查找:https://github.com/dcloudio/uni-app/issues/1200)
+  for (let i = $children.length - 1; i >= 0; i--) {
+    const childVm = $children[i];
+    if (childVm.$scope._$vueId === vuePid) {
+      return childVm
+    }
   }
   // 反向递归查找
+  let parentVm;
   for (let i = $children.length - 1; i >= 0; i--) {
     parentVm = findVmByVueId($children[i], vuePid);
     if (parentVm) {
@@ -1382,7 +1454,7 @@ function handleLink (event) {
   vueOptions.parent = parentVm;
 }
 
-const mocks = ['nodeId', 'componentName'];
+const mocks = ['nodeId', 'componentName', '_componentId', 'uniquePrefix'];
 
 function isPage () {
   return !this.ownerId
@@ -1416,13 +1488,16 @@ function parseBaseComponent (vueComponentOptions, {
   isPage,
   initRelation
 } = {}) {
-  let [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions);
+  const [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions);
+
+  const options = {
+    multipleSlots: true,
+    addGlobalClass: true,
+    ...(vueOptions.options || {})
+  };
 
   const componentOptions = {
-    options: {
-      multipleSlots: true,
-      addGlobalClass: true
-    },
+    options,
     data: initData(vueOptions, Vue.prototype),
     behaviors: initBehaviors(vueOptions, initBehavior),
     properties: initProperties(vueOptions.props, false, vueOptions.__file),
@@ -1463,7 +1538,7 @@ function parseBaseComponent (vueComponentOptions, {
         }
       },
       detached () {
-        this.$vm.$destroy();
+        this.$vm && this.$vm.$destroy();
       }
     },
     pageLifetimes: {
@@ -1482,6 +1557,10 @@ function parseBaseComponent (vueComponentOptions, {
       __e: handleEvent
     }
   };
+  // externalClasses
+  if (vueOptions.externalClasses) {
+    componentOptions.externalClasses = vueOptions.externalClasses;
+  }
 
   if (Array.isArray(vueOptions.wxsCallMethods)) {
     vueOptions.wxsCallMethods.forEach(callMethod => {
@@ -1497,34 +1576,47 @@ function parseBaseComponent (vueComponentOptions, {
   return [componentOptions, VueComponent]
 }
 
+const newLifecycle = swan.canIUse('lifecycle-2-0');
+
 function parseComponent (vueOptions) {
   const componentOptions = parseBaseComponent(vueOptions, {
     isPage,
     initRelation
   });
 
+  // 关于百度小程序生命周期的说明(组件作为页面时):
+  // lifetimes:attached --> methods:onShow --> methods:onLoad --> methods:onReady
+  // 这里在强制将onShow挪到onLoad之后触发,另外一处修改在page-parser.js
   const oldAttached = componentOptions.lifetimes.attached;
-
   componentOptions.lifetimes.attached = function attached () {
     oldAttached.call(this);
     if (isPage.call(this)) { // 百度 onLoad 在 attached 之前触发
       // 百度 当组件作为页面时 pageinstancce 不是原来组件的 instance
       this.pageinstance.$vm = this.$vm;
-
       if (hasOwn(this.pageinstance, '_$args')) {
         this.$vm.$mp.query = this.pageinstance._$args;
         this.$vm.__call_hook('onLoad', this.pageinstance._$args);
+        this.$vm.__call_hook('onShow');
         delete this.pageinstance._$args;
       }
-      // TODO  目前版本 百度 Component 作为页面时，methods 中的 onShow 不触发
-      this.$vm.__call_hook('onShow');
+    } else {
+      // 百度小程序组件不触发methods内的onReady
+      if (this.$vm) {
+        this.$vm._isMounted = true;
+        this.$vm.__call_hook('mounted');
+      }
     }
   };
 
+  if (newLifecycle) {
+    componentOptions.methods.onReady = componentOptions.lifetimes.ready;
+    delete componentOptions.lifetimes.ready;
+  }
+
   componentOptions.messages = {
-    '__l': componentOptions.methods['__l']
+    __l: componentOptions.methods.__l
   };
-  delete componentOptions.methods['__l'];
+  delete componentOptions.methods.__l;
 
   return componentOptions
 }
@@ -1573,11 +1665,19 @@ function parsePage (vuePageOptions) {
     initRelation
   });
 
+  // 纠正百度小程序生命周期methods:onShow在methods:onLoad之前触发的问题
+  pageOptions.methods.onShow = function onShow () {
+    if (this.$vm && this.$vm.$mp.query) {
+      this.$vm.__call_hook('onShow');
+    }
+  };
+
   pageOptions.methods.onLoad = function onLoad (args) {
     // 百度 onLoad 在 attached 之前触发，先存储 args, 在 attached 里边触发 onLoad
     if (this.$vm) {
       this.$vm.$mp.query = args;
       this.$vm.__call_hook('onLoad', args);
+      this.$vm.__call_hook('onShow');
     } else {
       this.pageinstance._$args = args;
     }
@@ -1620,7 +1720,7 @@ let uni = {};
 if (typeof Proxy !== 'undefined' && "mp-baidu" !== 'app-plus') {
   uni = new Proxy({}, {
     get (target, name) {
-      if (target[name]) {
+      if (hasOwn(target, name)) {
         return target[name]
       }
       if (baseApi[name]) {

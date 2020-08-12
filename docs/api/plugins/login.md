@@ -3,7 +3,7 @@
 
 **平台差异说明**
 
-|5+App|H5|微信小程序|支付宝小程序|百度小程序|头条小程序|QQ小程序|
+|App|H5|微信小程序|支付宝小程序|百度小程序|字节跳动小程序|QQ小程序|
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 |√|x|√|√|√|√|√|
 
@@ -28,14 +28,17 @@ H5平台登陆注意事项：
 |参数名|说明|
 |:-|:-|
 |authResult|登录服务商提供的登录信息，服务商不同返回的结果不完全相同|
+|code|小程序专有，用户登录凭证。开发者需要在开发者服务器后台，使用 code 换取 openid 和 session_key 等信息|
 |errMsg|描述信息|
 
-各个小程序平台的登录流程存在差异，详细请参考相关平台的文档说明：
+各个平台的登录流程存在差异，详细请参考相关平台的文档说明：
 
 * [微信小程序登录](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/login.html)
-* [支付宝小程序用户授权](https://docs.alipay.com/mini/introduce/auth)
+* [支付宝小程序用户授权](https://docs.alipay.com/mini/introduce/authcode)
 * [百度小程序登录](https://smartprogram.baidu.com/docs/develop/api/open_log/#%E6%8E%88%E6%9D%83%E6%B5%81%E7%A8%8B%E8%AF%B4%E6%98%8E/)
-* [头条小程序登录](https://developer.toutiao.com/docs/open/login.html)
+* [字节跳动小程序登录](https://developer.toutiao.com/dev/cn/mini-app/develop/open-capacity/log-in/login)
+* [Apple登录、苹果登录、Sign in with Apple](https://ask.dcloud.net.cn/article/36651)
+
 
 **示例**
 
@@ -56,7 +59,7 @@ uni.login({
 
 **平台差异说明**
 
-|5+App|H5|微信小程序|支付宝小程序|百度小程序|头条小程序|QQ小程序|
+|App|H5|微信小程序|支付宝小程序|百度小程序|字节跳动小程序|QQ小程序|
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 |x|x|√|x|√|√|√|
 
@@ -73,7 +76,7 @@ uni.login({
 
 **平台差异说明**
 
-|5+App|H5|微信小程序|支付宝小程序|百度小程序|头条小程序|QQ小程序|
+|App|H5|微信小程序|支付宝小程序|百度小程序|字节跳动小程序|QQ小程序|
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 |√|x|√|√|√|√|√|
 
@@ -84,8 +87,8 @@ uni.login({
 |参数名|类型|必填|说明|平台差异说明|
 |:-|:-|:-|:-|:-|:-|
 |provider|String|否|登录服务提供商，通过 uni.getProvider 获取||
-|withCredentials|Boolean|否|是否带上登录态信息。|微信小程序、头条小程序|
-|lang|Number|否|指定返回用户信息的语言，默认为 en。更多值请参考下面的说明。|微信小程序|
+|withCredentials|Boolean|否|是否带上登录态信息。|微信小程序、字节跳动小程序|
+|lang|String|否|指定返回用户信息的语言，默认为 en。更多值请参考下面的说明。|微信小程序|
 |timeout|Number|否|超时时间，单位 ms。|微信小程序|
 |success|Function|否|接口调用成功的回调||
 |fail|Function|否|接口调用失败的回调函数||
@@ -99,7 +102,7 @@ uni.login({
 |zh_TW|繁体中文|
 |en|英文|
 
-**注意：**在小程序 withCredentials 为 true 时或是在 5+App 调用 uni.getUserInfo，要求此前有调用过 uni.login 且登录态尚未过期。
+**注意：**在小程序 withCredentials 为 true 时或是在 App 调用 uni.getUserInfo，要求此前有调用过 uni.login 且登录态尚未过期。
 
 **success 返回参数说明**
 
@@ -107,9 +110,9 @@ uni.login({
 |:-|:-|:-||
 |userInfo|OBJECT|用户信息对象||
 |rawData|String|不包括敏感信息的原始数据字符串，用于计算签名。||
-|signature|String|使用 sha1( rawData + sessionkey ) 得到字符串，用于校验用户信息。|微信小程序、头条小程序|
-|encryptedData|String|包括敏感数据在内的完整用户信息的加密数据，详细见加密数据解密算法。|微信小程序、头条小程序|
-|iv|String|加密算法的初始向量，详细见加密数据解密算法。|微信小程序、头条小程序|
+|signature|String|使用 sha1( rawData + sessionkey ) 得到字符串，用于校验用户信息。|微信小程序、字节跳动小程序|
+|encryptedData|String|包括敏感数据在内的完整用户信息的加密数据，详细见加密数据解密算法。|微信小程序、字节跳动小程序|
+|iv|String|加密算法的初始向量，详细见加密数据解密算法。|微信小程序、字节跳动小程序|
 |errMsg|String|描述信息|&nbsp;|
 
 **userInfo 参数说明**
@@ -117,7 +120,7 @@ uni.login({
 |参数|类型|说明|平台差异说明|
 |:-|:-|:-||
 |nickName|String|用户昵称||
-|openId|String|该服务商唯一用户标识|5+App|
+|openId|String|该服务商唯一用户标识|App|
 |avatarUrl|String|用户头像|&nbsp;|
 
 除了以上三个必有的信息外，不同服务供应商返回的其它信息会存在差异。
@@ -154,6 +157,5 @@ uni.login({
 ```
 
 #### App端集成其他登陆SDK如支付宝、淘宝、facebook登陆的说明
-1. 使用原生插件方式，可以集成三方sdk，原生插件开发文档见[https://ask.dcloud.net.cn/article/35428](https://ask.dcloud.net.cn/article/35428)。开发之前可以先去[插件市场](https://ext.dcloud.net.cn/)看下有没有做好的。
-2. 支付宝登陆、淘宝登陆在插件市场均有插件，[支付宝登陆](https://ext.dcloud.net.cn/search?q=%E6%94%AF%E4%BB%98%E5%AE%9D%E7%99%BB%E9%99%86)、[淘宝登陆](https://ext.dcloud.net.cn/search?q=%E7%99%BE%E5%B7%9D)。
-3. 也可以内嵌web-view组件，使用web登陆模式集成这些三方登陆
+1. [支付宝登陆](https://ext.dcloud.net.cn/search?q=%E6%94%AF%E4%BB%98%E5%AE%9D%E7%99%BB%E9%99%86)、[淘宝登陆](https://ext.dcloud.net.cn/search?q=%E7%99%BE%E5%B7%9D)、[抖音登录](https://ext.dcloud.net.cn/search?q=%E6%8A%96%E9%9F%B3%E7%99%BB%E5%BD%95)、[facebook登录](https://ext.dcloud.net.cn/search?q=facebook%E7%99%BB%E5%BD%95)等在插件市场均已有插件，还有[sharesdk](https://ext.dcloud.net.cn/search?q=sharesdk)等专业集成多家登录分享的插件。
+2. 也可以内嵌web-view组件，使用web登陆模式集成这些三方登陆

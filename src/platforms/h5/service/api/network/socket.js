@@ -47,7 +47,7 @@ class SocketTask {
           }
         })
       })
-      let propertys = ['CLOSED', 'CLOSING', 'CONNECTING', 'OPEN', 'readyState']
+      const propertys = ['CLOSED', 'CLOSING', 'CONNECTING', 'OPEN', 'readyState']
       propertys.forEach((property) => {
         Object.defineProperty(this, property, {
           get () {
@@ -60,6 +60,7 @@ class SocketTask {
     }
     callback(error, this)
   }
+
   /**
    * 发送
    * @param {any} data
@@ -68,12 +69,16 @@ class SocketTask {
     const data = options.data
     const ws = this._webSocket
     try {
+      if (ws.readyState !== ws.OPEN) {
+        throw new Error('SocketTask.readyState is not OPEN')
+      }
       ws.send(data)
       this._callback(options, 'sendSocketMessage:ok')
     } catch (error) {
       this._callback(options, `sendSocketMessage:fail ${error}`)
     }
   }
+
   /**
    * 关闭
    * @param {number} code
@@ -93,6 +98,7 @@ class SocketTask {
       this._callback(options, `sendSocketMessage:fail ${error}`)
     }
   }
+
   /**
    * 通用回调处理
    */

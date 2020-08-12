@@ -14,6 +14,10 @@ const {
 } = require('@dcloudio/uni-cli-shared')
 
 const {
+  getBabelParserOptions
+} = require('@dcloudio/uni-cli-shared/lib/platform')
+
+const {
   updateUsingComponents
 } = require('@dcloudio/uni-cli-shared/lib/cache')
 
@@ -41,7 +45,7 @@ function addCreateApp (babelLoader) {
   babelLoader.options.plugins.push([babelPluginCreateApp])
 }
 
-module.exports = function (content) {
+module.exports = function (content, map) {
   this.cacheable && this.cacheable()
 
   if (this.resourceQuery) {
@@ -55,17 +59,18 @@ module.exports = function (content) {
         const vuePagePath = path.resolve(process.env.UNI_INPUT_DIR, normalizePath(params.page) + '.vue')
         if (!fs.existsSync(vuePagePath)) {
           const nvuePagePath = path.resolve(process.env.UNI_INPUT_DIR, normalizePath(params.page) +
-                        '.nvue')
+            '.nvue')
           if (fs.existsSync(nvuePagePath)) {
             ext = '.nvue'
           }
         }
       }
-      return `
-import Vue from 'vue'            
+      return this.callback(null,
+        `
+import Vue from 'vue'
 import Page from './${normalizePath(params.page)}${ext}'
 createPage(Page)
-`
+`, map)
     }
   } else {
     content = preprocessor.preprocess(content, jsPreprocessOptions.context, {
@@ -78,16 +83,7 @@ createPage(Page)
       state: {
         components
       }
-    } = traverse(parser.parse(content, {
-      sourceType: 'module',
-      plugins: [
-        'typescript',
-        ['decorators', {
-          decoratorsBeforeExport: true
-        }],
-        'classProperties'
-      ]
-    }), {
+    } = traverse(parser.parse(content, getBabelParserOptions()), {
       components: []
     })
 
@@ -101,7 +97,7 @@ createPage(Page)
     if (!components.length) {
       // 防止组件从有到无
       updateUsingComponents(resourcePath, Object.create(null), 'App')
-      return content
+      return this.callback(null, content, map)
     }
 
     const callback = this.async()
@@ -135,9 +131,9 @@ createPage(Page)
       addDynamicImport(babelLoader, resourcePath, dynamicImports)
 
       updateUsingComponents(resourcePath, usingComponents, 'App')
-      callback(null, content)
+      callback(null, content, map)
     }, err => {
-      callback(err, content)
+      callback(err, content, map)
     })
   }
 }
