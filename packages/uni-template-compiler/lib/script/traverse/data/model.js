@@ -5,19 +5,22 @@ const {
 } = require('./util')
 
 module.exports = function processRef (paths, path, state) {
-  const modelPath = paths['model']
+  const modelPath = paths.model
   if (modelPath) {
-    const callbackProperty = modelPath.node.value.properties.find(property => {
+    const properties = modelPath.node.value.properties
+    const [callbackProperty] = properties.splice(properties.findIndex(property => {
       return property.key.name === 'callback'
-    })
-
-    const exprProperty = modelPath.node.value.properties.find(
+    }), 1)
+    const valueProperty = properties.find(
+      property => property.key.name === 'value'
+    )
+    const exprProperty = properties.find(
       property => property.key.name === 'expression'
     )
 
     const prop = exprProperty.value.value.trim()
 
-    const onPath = paths['on']
+    const onPath = paths.on
 
     // on:{'input':__m('msg',$event)}
     if (!onPath) {
@@ -32,7 +35,7 @@ module.exports = function processRef (paths, path, state) {
           )
         ]))
       )
-      paths['on'] = path.get('properties').find(
+      paths.on = path.get('properties').find(
         propertyPath => propertyPath.node.key.name === 'on'
       )
     } else {
@@ -62,8 +65,8 @@ module.exports = function processRef (paths, path, state) {
 
     return [ // attrs:{value:value}
       t.objectProperty(
-        t.stringLiteral('value'),
-        t.identifier(prop)
+        t.stringLiteral(process.env.UNI_USING_VUE3 ? 'modelValue' : 'value'),
+        valueProperty.value
       )
     ]
   }

@@ -28,6 +28,7 @@ const INTERNAL_GET_EVENT = '__get_event'
 const INTERNAL_GET_REFS = '__get_refs'
 const INTERNAL_EVENT_PROXY = '__e'
 const INTERNAL_EVENT_LINK = '__l'
+const INTERNAL_EVENT_WRAP = '__w'
 
 const ALLOWED_GLOBAL_OBJECT = [
   'Math',
@@ -42,7 +43,20 @@ const ALLOWED_GLOBAL_OBJECT = [
   'Set',
   'JSON',
   'Intl',
-  'console'
+  'console',
+  'Infinity',
+  'undefined',
+  'NaN',
+  'isFinite',
+  'isNaN',
+  'parseFloat',
+  'parseInt',
+  'decodeURI',
+  'decodeURIComponent',
+  'encodeURI',
+  'encodeURIComponent',
+  'require',
+  'arguments'
 ]
 
 module.exports = {
@@ -59,9 +73,16 @@ module.exports = {
   VAR_MP: '$mp',
   VAR_ROOT: '$root',
   VAR_ORIGINAL: '$orig',
+  VAR_INDEX: '$index',
   VAR_FILTER: 'F',
   ATTR_DATA_EVENT_OPTS: 'data-event-opts',
   ATTR_DATA_COM_TYPE: 'data-com-type',
+  ATTR_DATA_EVENT_PARAMS: 'data-event-params',
+  ATTR_DATA_EVENT_LIST: 'data-event-list',
+  ATTR_SLOT_ORIGIN: 'slot-origin',
+  ATTR_DATA_CUSTOM_HIDDEN: 'data-custom-hidden',
+  VIRTUAL_HOST_STYLE: 'virtualHostStyle',
+  VIRTUAL_HOST_CLASS: 'virtualHostClass',
   INTERNAL_GET_ORIG,
   INTERNAL_GET_CLASS,
   INTERNAL_GET_STYLE,
@@ -69,6 +90,7 @@ module.exports = {
   INTERNAL_GET_REFS,
   INTERNAL_EVENT_PROXY,
   INTERNAL_EVENT_LINK,
+  INTERNAL_EVENT_WRAP,
   INTERNAL_SET_MODEL,
   INTERNAL_SET_SYNC,
   METHOD_BUILT_IN: [
@@ -104,6 +126,9 @@ module.exports = {
   METHOD_TO_STRING,
   METHOD_RENDER_LIST,
   METHOD_RESOLVE_FILTER,
+  METHOD_RENDER_SLOT,
+  METHOD_CREATE_EMPTY_VNODE,
+  METHOD_RESOLVE_SCOPED_SLOTS,
   PREFIX_GLOBAL: 'g',
   PREFIX_ATTR: 'a',
   PREFIX_METHOD: 'm',
@@ -112,6 +137,7 @@ module.exports = {
   PREFIX_CLASS: 'c',
   PREFIX_STYLE: 's',
   PREFIX_EVENT: 'e',
+  PREFIX_TEXT: 't',
   IDENTIFIER_FOR: '__$$for$$__',
   IDENTIFIER_ATTR: '__$$attr$$__',
   IDENTIFIER_METHOD: '__$$method$$__',
@@ -119,5 +145,6 @@ module.exports = {
   IDENTIFIER_CLASS: '__$$class$$__',
   IDENTIFIER_STYLE: '__$$style$$__',
   IDENTIFIER_EVENT: '__$$event$$__',
-  IDENTIFIER_GLOBAL: '__$$global$$__'
+  IDENTIFIER_GLOBAL: '__$$global$$__',
+  IDENTIFIER_TEXT: '__$$text$$__'
 }

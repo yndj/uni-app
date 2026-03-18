@@ -9,7 +9,7 @@ const eventNames = [
   'pause',
   'stop',
   'ended',
-  'timeupdate',
+  'timeUpdate',
   'prev',
   'next',
   'error',
@@ -70,8 +70,15 @@ const props = [
     name: 'protocol',
     readonly: true,
     default: 'http'
+  },
+  {
+    name: 'playbackRate',
+    default: 1,
+    cache: true
   }
 ]
+
+const backgroundEvents = ['prev', 'next']
 
 class BackgroundAudioManager {
   constructor () {
@@ -90,6 +97,15 @@ class BackgroundAudioManager {
         }
       })
     })
+    backgroundEvents.forEach((name) => {
+      onMethod(`onBackgroundAudio${name[0].toUpperCase() + name.substr(1)}`, () => {
+        callbacks[name].forEach(callback => {
+          if (typeof callback === 'function') {
+            callback({})
+          }
+        })
+      })
+    })
     props.forEach(item => {
       const name = item.name
       const data = {
@@ -103,26 +119,31 @@ class BackgroundAudioManager {
           this._options[name] = value
           invokeMethod('setBackgroundAudioState', Object.assign({}, this._options, {
             audioId: this.id
-          }))
+          }), name)
         }
       }
       Object.defineProperty(this, name, data)
     })
   }
+
   play () {
     this._operate('play')
   }
+
   pause () {
     this._operate('pause')
   }
+
   stop () {
     this._operate('stop')
   }
+
   seek (position) {
-    this._operate('play', {
+    this._operate('seek', {
       currentTime: position
     })
   }
+
   _operate (type, options) {
     invokeMethod('operateBackgroundAudio', Object.assign({}, options, {
       operationType: type

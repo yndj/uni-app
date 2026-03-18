@@ -8,10 +8,11 @@
 		"es6": false,
 		"postcss": false,
 		"minified": false,
-		"newFeature": true
+		"newFeature": true,
+    "bigPackageSizeSupport": true
 	},
 	"compileType": "miniprogram",
-	"libVersion": "2.7.0",
+	"libVersion": "",
 	"appid": "touristappid",
 	"projectname": "",
 	"condition": {

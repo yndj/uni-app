@@ -1,12 +1,26 @@
 <template>
   <uni-radio
+    :id="id"
+    :disabled="disabled"
     v-on="$listeners"
-    @click="_onClick">
-    <div class="uni-radio-wrapper">
+    @click="_onClick"
+  >
+    <div
+      class="uni-radio-wrapper"
+      :style="{
+        '--HOVER-BD-COLOR': !radioChecked
+          ? activeBorderColor
+          : radioStyle.borderColor
+      }"
+    >
       <div
-        :class="radioChecked ? 'uni-radio-input-checked' : ''"
-        :style="radioChecked ? checkedStyle : ''"
-        class="uni-radio-input" />
+        :class="{
+          'uni-radio-input-checked': radioChecked,
+          'uni-radio-input-disabled': disabled,
+        }"
+        :style="radioStyle"
+        class="uni-radio-input"
+      />
       <slot />
     </div>
   </uni-radio>
@@ -32,13 +46,33 @@ export default {
       type: [Boolean, String],
       default: false
     },
+    value: {
+      type: String,
+      default: ''
+    },
     color: {
       type: String,
       default: '#007AFF'
     },
-    value: {
+    backgroundColor: {
       type: String,
       default: ''
+    },
+    borderColor: {
+      type: String,
+      default: ''
+    },
+    activeBackgroundColor: {
+      type: String,
+      default: ''
+    },
+    activeBorderColor: {
+      type: String,
+      default: ''
+    },
+    iconColor: {
+      type: String,
+      default: '#ffffff'
     }
   },
   data () {
@@ -48,8 +82,24 @@ export default {
     }
   },
   computed: {
-    checkedStyle () {
-      return `background-color: ${this.color};border-color: ${this.color};`
+    radioStyle () {
+      if (this.disabled) {
+        return {
+          backgroundColor: '#E1E1E1',
+          borderColor: '#D1D1D1'
+        }
+      }
+      const style = {}
+      // 兼容旧版本样式
+      if (this.radioChecked) {
+        style.color = this.iconColor
+        style.backgroundColor = this.activeBackgroundColor || this.color
+        style.borderColor = this.activeBorderColor || style.backgroundColor
+      } else {
+        if (this.borderColor) style.borderColor = this.borderColor
+        if (this.backgroundColor) style.backgroundColor = this.backgroundColor
+      }
+      return style
     }
   },
   watch: {
@@ -102,10 +152,15 @@ export default {
 	uni-radio {
 		-webkit-tap-highlight-color: transparent;
 		display: inline-block;
+		cursor: pointer;
 	}
 
 	uni-radio[hidden] {
 		display: none;
+	}
+
+	uni-radio[disabled] {
+		cursor: not-allowed;
 	}
 
 	uni-radio .uni-radio-wrapper {
@@ -129,10 +184,15 @@ export default {
 		position: relative;
 	}
 
+  @media (any-hover: hover) {
+    uni-radio:not([disabled]) .uni-radio-input:hover {
+      border-color: var(--HOVER-BD-COLOR, #007aff) !important;
+    }
+  }
+
 	uni-radio .uni-radio-input.uni-radio-input-checked:before {
 		font: normal normal normal 14px/1 "uni";
 		content: "\EA08";
-		color: #ffffff;
 		font-size: 18px;
 		position: absolute;
 		top: 50%;

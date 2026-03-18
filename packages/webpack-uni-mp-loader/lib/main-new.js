@@ -14,6 +14,10 @@ const {
 } = require('@dcloudio/uni-cli-shared')
 
 const {
+  getBabelParserOptions
+} = require('@dcloudio/uni-cli-shared/lib/platform')
+
+const {
   updateUsingComponents
 } = require('@dcloudio/uni-cli-shared/lib/cache')
 
@@ -33,6 +37,8 @@ const traverse = require('./babel/global-component-traverse')
 
 const babelPluginCreateApp = require.resolve('./babel/plugin-create-app')
 
+const uniI18n = require('@dcloudio/uni-cli-i18n')
+
 function addCreateApp (babelLoader) {
   babelLoader.options = babelLoader.options || {}
   if (!babelLoader.options.plugins) {
@@ -41,7 +47,7 @@ function addCreateApp (babelLoader) {
   babelLoader.options.plugins.push([babelPluginCreateApp])
 }
 
-module.exports = function (content) {
+module.exports = function (content, map) {
   this.cacheable && this.cacheable()
 
   if (this.resourceQuery) {
@@ -55,22 +61,29 @@ module.exports = function (content) {
         const vuePagePath = path.resolve(process.env.UNI_INPUT_DIR, normalizePath(params.page) + '.vue')
         if (!fs.existsSync(vuePagePath)) {
           const nvuePagePath = path.resolve(process.env.UNI_INPUT_DIR, normalizePath(params.page) +
-                        '.nvue')
+            '.nvue')
           if (fs.existsSync(nvuePagePath)) {
             ext = '.nvue'
           }
         }
       }
-      return `
-import Vue from 'vue'            
+      return this.callback(null,
+        `
+import Vue from 'vue'
 import Page from './${normalizePath(params.page)}${ext}'
 createPage(Page)
-`
+`, map)
     }
   } else {
     content = preprocessor.preprocess(content, jsPreprocessOptions.context, {
       type: jsPreprocessOptions.type
     })
+
+    if (process.env.UNI_USING_VUE3) {
+      if (content.indexOf('createSSRApp') !== -1) {
+        content = content + ';createApp().app.mount(\'#app\');'
+      }
+    }
 
     const resourcePath = 'app'
 
@@ -78,30 +91,33 @@ createPage(Page)
       state: {
         components
       }
-    } = traverse(parser.parse(content, {
-      sourceType: 'module',
-      plugins: [
-        'typescript',
-        ['decorators', {
-          decoratorsBeforeExport: true
-        }],
-        'classProperties'
-      ]
-    }), {
+    } = traverse(parser.parse(content, getBabelParserOptions()), {
+      filename: this.resourcePath,
       components: []
     })
 
-    const babelLoader = findBabelLoader(this.loaders)
+    let babelLoader = findBabelLoader(this.loaders)
     if (!babelLoader) {
-      throw new Error('babel-loader 查找失败')
+      throw new Error(uniI18n.__('mpLoader.findFail', {
+        0: 'babel-loader'
+      }))
     } else {
+      const webpack = require('webpack')
+      if (webpack.version[0] > 4) {
+        // clone babelLoader and options
+        const index = this.loaders.indexOf(babelLoader)
+        const newBabelLoader = Object.assign({}, babelLoader)
+        Object.assign(newBabelLoader, { options: Object.assign({}, babelLoader.options) })
+        this.loaders.splice(index, 1, newBabelLoader)
+        babelLoader = newBabelLoader
+      }
       addCreateApp(babelLoader)
     }
 
     if (!components.length) {
       // 防止组件从有到无
       updateUsingComponents(resourcePath, Object.create(null), 'App')
-      return content
+      return this.callback(null, content, map)
     }
 
     const callback = this.async()
@@ -135,9 +151,9 @@ createPage(Page)
       addDynamicImport(babelLoader, resourcePath, dynamicImports)
 
       updateUsingComponents(resourcePath, usingComponents, 'App')
-      callback(null, content)
+      callback(null, content, map)
     }, err => {
-      callback(err, content)
+      callback(err, content, map)
     })
   }
 }

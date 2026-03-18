@@ -22,6 +22,7 @@ class SocketTask {
     this.OPEN = 1
     this.readyState = this.CLOSED
   }
+
   send (args) {
     if (this.readyState !== this.OPEN) {
       this._callback(args, 'sendSocketMessage:fail WebSocket is not connected')
@@ -34,6 +35,7 @@ class SocketTask {
     }))
     this._callback(args, errMsg.replace('operateSocketTask', 'sendSocketMessage'))
   }
+
   close (args) {
     this.readyState = this.CLOSING
     const {
@@ -44,23 +46,28 @@ class SocketTask {
     }))
     this._callback(args, errMsg.replace('operateSocketTask', 'closeSocket'))
   }
+
   onOpen (callback) {
     this._callbacks.open.push(callback)
   }
+
   onClose (callback) {
     this._callbacks.close.push(callback)
   }
+
   onError (callback) {
     this._callbacks.error.push(callback)
   }
+
   onMessage (callback) {
     this._callbacks.message.push(callback)
   }
+
   _callback ({
     success,
     fail,
     complete
-  }, errMsg) {
+  } = {}, errMsg) {
     var data = {
       errMsg
     }
@@ -86,26 +93,24 @@ onMethod('onSocketTaskStateChange', ({
   socketTaskId,
   state,
   data,
+  code,
+  reason,
   errMsg
 }) => {
   const socketTask = socketTasks[socketTaskId]
   if (!socketTask) {
     return
   }
-  socketTask._callbacks[state].forEach(callback => {
-    if (typeof callback === 'function') {
-      callback(state === 'message' ? {
-        data
-      } : {})
-    }
-  })
+  const callbackRes = state === 'message'
+    ? { data }
+    : state === 'close'
+      ? { code, reason }
+      : {}
   if (state === 'open') {
     socketTask.readyState = socketTask.OPEN
   }
   if (socketTask === socketTasksArray[0] && callbacks[state]) {
-    invoke(callbacks[state], state === 'message' ? {
-      data
-    } : {})
+    invoke(callbacks[state], callbackRes)
   }
   if (state === 'error' || state === 'close') {
     socketTask.readyState = socketTask.CLOSED
@@ -115,6 +120,11 @@ onMethod('onSocketTaskStateChange', ({
       socketTasksArray.splice(index, 1)
     }
   }
+  socketTask._callbacks[state].forEach(callback => {
+    if (typeof callback === 'function') {
+      callback(callbackRes)
+    }
+  })
 })
 
 export function connectSocket (args, callbackId) {

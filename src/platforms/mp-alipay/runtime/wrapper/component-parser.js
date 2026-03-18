@@ -12,6 +12,7 @@ import {
 import {
   handleRef,
   handleLink,
+  handleWrap,
   initBehavior,
   initRelation,
   triggerEvent,
@@ -20,6 +21,29 @@ import {
   initChildVues,
   initSpecialMethods
 } from './util'
+
+function initSlots (vm, vueSlots) {
+  const $slots = Object.create(null)
+  // 未启用小程序基础库 2.0 时，组件实例支持支持访问 $slots、$scopedSlots
+  Object.defineProperty(vm, '$slots', {
+    get () {
+      const $scope = this.$scope
+      return ($scope && $scope.props.$slots) || ($scope && $scope.props.$scopedSlots ? {} : $slots)
+    }
+  })
+  Object.defineProperty(vm, '$scopedSlots', {
+    get () {
+      const $scope = this.$scope
+      return ($scope && $scope.props.$scopedSlots) || ($scope && $scope.props.$slots ? {} : $slots)
+    }
+  })
+  // 处理$slots,$scopedSlots（暂不支持动态变化$slots）
+  if (Array.isArray(vueSlots) && vueSlots.length) {
+    vueSlots.forEach(slotName => {
+      $slots[slotName] = true
+    })
+  }
+}
 
 function initVm (VueComponent) {
   if (this.$vm) {
@@ -45,6 +69,8 @@ function initVm (VueComponent) {
     // 初始化 vue 实例
     this.$vm = new VueComponent(options)
 
+    initSlots(this.$vm, properties.vueSlots)
+
     // 触发首次 setData
     this.$vm.$mount()
   } else {
@@ -56,10 +82,14 @@ function initVm (VueComponent) {
       mpInstance: this
     })
 
-    if (options.parent) { // 父组件已经初始化，直接初始化子，否则放到父组件的 didMount 中处理
+    if (options.parent) {
+      // 父组件已经初始化，直接初始化子，否则放到父组件的 didMount 中处理
       // 初始化 vue 实例
       this.$vm = new VueComponent(options)
       handleRef.call(options.parent.$scope, this)
+
+      initSlots(this.$vm, properties.vueSlots)
+
       // 触发首次 setData
       this.$vm.$mount()
 
@@ -72,8 +102,8 @@ function initVm (VueComponent) {
   }
 }
 
-export default function parseComponent (vueComponentOptions) {
-  let [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions)
+export default function parseComponent (vueComponentOptions, needVueOptions) {
+  const [VueComponent, vueOptions] = initVueComponent(Vue, vueComponentOptions)
 
   const properties = initProperties(vueOptions.props, false, vueOptions.__file)
 
@@ -82,9 +112,7 @@ export default function parseComponent (vueComponentOptions) {
   }
 
   Object.keys(properties).forEach(key => {
-    if (key !== 'vueSlots') {
-      props[key] = properties[key].value
-    }
+    props[key] = properties[key].value
   })
 
   const componentOptions = {
@@ -92,7 +120,14 @@ export default function parseComponent (vueComponentOptions) {
     data: initData(vueOptions, Vue.prototype),
     props,
     didMount () {
-      initVm.call(this, VueComponent)
+      if (my.dd) {
+        // 钉钉小程序底层基础库有 bug,组件嵌套使用时,在 didMount 中无法及时调用 props 中的方法
+        setTimeout(() => {
+          initVm.call(this, VueComponent)
+        }, 4)
+      } else {
+        initVm.call(this, VueComponent)
+      }
 
       initSpecialMethods(this)
 
@@ -103,14 +138,19 @@ export default function parseComponent (vueComponentOptions) {
       }
     },
     didUnmount () {
-      this.$vm.$destroy()
+      this.$vm && this.$vm.$destroy()
     },
     methods: {
       __r: handleRef,
       __e: handleEvent,
       __l: handleLink,
+      __w: handleWrap,
       triggerEvent
     }
+  }
+
+  if (vueOptions.options) {
+    componentOptions.options = vueOptions.options
   }
 
   if (isComponent2) {
@@ -122,5 +162,13 @@ export default function parseComponent (vueComponentOptions) {
     componentOptions.didUpdate = createObserver(true)
   }
 
-  return componentOptions
+  if (Array.isArray(vueOptions.wxsCallMethods)) {
+    vueOptions.wxsCallMethods.forEach(callMethod => {
+      componentOptions.methods[callMethod] = function (args) {
+        return this.$vm[callMethod](args)
+      }
+    })
+  }
+
+  return needVueOptions ? [componentOptions, vueOptions] : componentOptions
 }

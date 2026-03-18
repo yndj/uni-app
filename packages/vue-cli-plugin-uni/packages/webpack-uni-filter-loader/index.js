@@ -10,9 +10,15 @@ const {
   normalizeNodeModules
 } = require('@dcloudio/uni-cli-shared/lib/platform')
 
-module.exports = function(source, map) {
+module.exports = function (source, map) {
   const params = loaderUtils.parseQuery(this.resourceQuery)
-  if (process.env.UNI_PLATFORM === 'h5') { // h5
+  if (
+    process.env.UNI_PLATFORM === 'h5' ||
+    (
+      process.env.UNI_PLATFORM === 'app-plus' &&
+      process.env.UNI_USING_V3
+    )
+  ) { // h5 or v3 app-plus
     this.callback(
       null,
       `export default function (Component) {
@@ -29,7 +35,7 @@ module.exports = function(source, map) {
       traverse(parser.parse(source, {
         sourceType: 'module'
       }), {
-        MemberExpression(path, state) {
+        MemberExpression (path, state) {
           const property = path.node.property
           const parentNode = path.parent
           if (
@@ -54,8 +60,8 @@ module.exports = function(source, map) {
        if(!Component.options.wxsCallMethods){
          Component.options.wxsCallMethods = []
        }
-       ${[...callMethods].map(method=>{
-           return "Component.options.wxsCallMethods.push('"+method+"')"
+       ${[...callMethods].map(method => {
+           return "Component.options.wxsCallMethods.push('" + method + "')"
        }).join('\n')}
      }`,
       map)

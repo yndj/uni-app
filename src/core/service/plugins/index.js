@@ -17,8 +17,16 @@ import {
 } from './lifecycle'
 
 import {
+  initPolyfill
+} from './polyfill'
+
+import {
   getTabBarScrollPosition
 } from './app/router-guard'
+
+import {
+  uniIdMixin
+} from 'uni-shared'
 
 function getMinId (routes) {
   let minId = 0
@@ -38,10 +46,17 @@ function getHash () {
 
 function getLocation (base = '/') {
   let path = decodeURI(window.location.pathname)
+  const search = window.location.search
+  const hash = window.location.hash
+  // 检查和纠正 path
+  if (base[base.length - 1] === '/' && path === base.substring(0, base.length - 1)) {
+    path = base
+    window.history.replaceState({}, '', base + search + hash)
+  }
   if (base && path.indexOf(base) === 0) {
     path = path.slice(base.length)
   }
-  return (path || '/') + window.location.search + window.location.hash
+  return (path || '/') + search + hash
 }
 
 /**
@@ -56,8 +71,26 @@ export default {
   install (Vue, {
     routes
   } = {}) {
+    if (
+      __PLATFORM__ === 'h5' &&
+      Vue.config.devtools &&
+      typeof window !== 'undefined' &&
+      window.navigator.userAgent.toLowerCase().indexOf('hbuilderx') !== -1
+    ) {
+      // HBuilderX 内置浏览器禁用 devtools 提示
+      Vue.config.devtools = false
+    }
+
+    initPolyfill(Vue)
+
     lifecycleMixin(Vue)
 
+    uniIdMixin(Vue)
+
+    /* eslint-disable no-undef */
+    if (typeof __UNI_ROUTER_BASE__ !== 'undefined') {
+      __uniConfig.router.base = __UNI_ROUTER_BASE__
+    }
     const minId = getMinId(routes)
     const router = new VueRouter({
       id: minId,
@@ -70,9 +103,9 @@ export default {
         } else {
           if (
             to &&
-                        from &&
-                        to.meta.isTabBar &&
-                        from.meta.isTabBar
+            from &&
+            to.meta.isTabBar &&
+            from.meta.isTabBar
           ) { // tabbar 跳 tabbar
             const position = getTabBarScrollPosition(to.params.__id__)
             if (position) {
@@ -91,6 +124,7 @@ export default {
     // 需跨平台，根据用户配置 hash 或 history 来调用
     const entryRoute = router.match(__uniConfig.router.mode === 'history' ? getLocation(__uniConfig.router.base)
       : getHash())
+
     if (entryRoute.meta.name) {
       if (entryRoute.meta.id) {
         keepAliveInclude.push(entryRoute.meta.name + '-' + entryRoute.meta.id)
@@ -120,7 +154,7 @@ export default {
               keepAliveInclude
             }
           }
-          const appMixin = createAppMixin(routes, entryRoute)
+          const appMixin = createAppMixin(Vue, routes, entryRoute)
           // mixin app hooks
           Object.keys(appMixin).forEach(hook => {
             options[hook] = options[hook] ? [].concat(appMixin[hook], options[hook]) : [
@@ -141,9 +175,15 @@ export default {
           const pageMixin = createPageMixin()
           // mixin page hooks
           Object.keys(pageMixin).forEach(hook => {
-            options[hook] = options[hook] ? [].concat(pageMixin[hook], options[hook]) : [
-              pageMixin[hook]
-            ]
+            if (options.mpOptions) { // 小程序适配出来的 vue 组件（保证先调用小程序适配里的 created，再触发 onLoad）
+              options[hook] = options[hook] ? [].concat(options[hook], pageMixin[hook]) : [
+                pageMixin[hook]
+              ]
+            } else {
+              options[hook] = options[hook] ? [].concat(pageMixin[hook], options[hook]) : [
+                pageMixin[hook]
+              ]
+            }
           })
         } else {
           if (this.$parent && this.$parent.__page__) {
@@ -165,6 +205,10 @@ export default {
 
     Vue.prototype.createIntersectionObserver = function createIntersectionObserver (args) {
       return uni.createIntersectionObserver(this, args)
+    }
+
+    Vue.prototype.createMediaQueryObserver = function createMediaQueryObserver (args) {
+      return uni.createMediaQueryObserver(this, args)
     }
 
     Vue.use(VueRouter)

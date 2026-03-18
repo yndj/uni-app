@@ -1,4 +1,5 @@
 const t = require('@babel/types')
+const uniI18n = require('@dcloudio/uni-cli-i18n')
 
 const {
   METHOD_CREATE_ELEMENT,
@@ -6,9 +7,12 @@ const {
   METHOD_RENDER_LIST,
   METHOD_BUILT_IN,
   METHOD_RESOLVE_FILTER,
+  METHOD_RENDER_SLOT,
+  METHOD_RESOLVE_SCOPED_SLOTS,
   IDENTIFIER_FILTER,
   IDENTIFIER_METHOD,
-  IDENTIFIER_GLOBAL
+  IDENTIFIER_GLOBAL,
+  IDENTIFIER_TEXT
 } = require('../../constants')
 
 const {
@@ -16,15 +20,21 @@ const {
 } = require('../../h5')
 
 const {
+  hasOwn,
   hyphenate,
   traverseFilter,
-  getComponentName
+  getComponentName,
+  hasEscapeQuote,
+  hasLengthProperty,
+  isRootElement
 } = require('../../util')
 
 const traverseData = require('./data')
 const traverseRenderList = require('./render-list')
 
 const getMemberExpr = require('./member-expr')
+const getRenderSlot = require('./render-slot')
+const getResolveScopedSlots = require('./resolve-scoped-slots')
 
 function addStaticClass (path, staticClass) {
   const dataPath = path.get('arguments.1')
@@ -55,23 +65,24 @@ function addVueId (path, state) {
   // ) {
   //   return
   // }
-  if (!state.options.hasOwnProperty('$vueId')) {
+  if (!hasOwn(state.options, '$vueId')) {
     state.options.$vueId = 1
   }
-  const vueId = String(state.options.$vueId++)
+  const hashId = state.options.hashId
+  const vueId = (hashId ? (hashId + '-') : '') + (state.options.$vueId++)
 
   let value
 
   if (state.scoped.length) {
-    let scopeds = state.scoped
-    let len = scopeds.length
+    const scopeds = state.scoped
+    const len = scopeds.length
     if (len > 1) { // v-for 嵌套，forIndex 不允许重复
       const forIndexSet = new Set()
       for (let i = 0; i < len; i++) {
         const scoped = scopeds[i]
         forIndexSet.add(scoped.forIndex)
         if (forIndexSet.size !== i + 1) {
-          state.errors.add(`v-for 嵌套时,索引名称 ${scoped.forIndex} 不允许重复`)
+          state.errors.add(uniI18n.__('templateCompiler.forNestedIndexNameNoArrowRepeat', { 0: 'v-for', 1: scoped.forIndex }))
           break
         }
       }
@@ -130,13 +141,26 @@ function checkUsingGlobalComponents (name, globalUsingComponents, state) {
 }
 
 module.exports = {
-  noScope: true,
+  noScope: false,
   MemberExpression (path) {
     if ( // t.m(123)
       t.isIdentifier(path.node.object) &&
       this.options.filterModules.includes(path.node.object.name)
     ) {
       path.skip()
+    }
+    // 微信小程序平台无法观测 Array length 访问：https://developers.weixin.qq.com/community/develop/doc/000c8ee47d87a0d5b6685a8cb57000
+    if (this.options.platform.name === 'mp-weixin' && hasLengthProperty(path)) {
+      let newPath = path
+      while (newPath) {
+        path = newPath
+        newPath = path.findParent((path) => path.isLogicalExpression())
+      }
+      path.skip()
+      if (path.findParent((path) => path.shouldSkip || (this.options.scopedSlotsCompiler === 'legacy' && path.isCallExpression() && path.node.callee.name === METHOD_RESOLVE_SCOPED_SLOTS))) {
+        return
+      }
+      path.replaceWith(getMemberExpr(path, IDENTIFIER_GLOBAL, path.node, this))
     }
   },
   CallExpression (path) {
@@ -147,38 +171,52 @@ module.exports = {
       const methodName = callee.name
       switch (methodName) {
         case METHOD_CREATE_ELEMENT:
-          const tagNode = path.node.arguments[0]
-          if (t.isStringLiteral(tagNode)) {
-            // 需要把标签增加到 class 样式中
-            const tagName = getTagName(tagNode.value)
-            if (tagName !== tagNode.value) {
-              addStaticClass(path, '_' + tagNode.value)
+          {
+            const tagNode = path.node.arguments[0]
+            if (t.isStringLiteral(tagNode)) {
+              // 需要把标签增加到 class 样式中
+              const tagName = getTagName(tagNode.value, this.options.platform.name)
+              if (tagName !== tagNode.value) {
+                addStaticClass(path, '_' + tagNode.value)
+              }
+              tagNode.value = getComponentName(hyphenate(tagName))
+
+              // 组件增加 vueId
+              // 跳过支付宝插件组件
+              if (this.options.platform.isComponent(tagNode.value) && !tagNode.$mpPlugin) {
+                addVueId(path, this)
+              }
+
+              // 查找全局组件
+              checkUsingGlobalComponents(
+                tagNode.value,
+                this.options.globalUsingComponents,
+                this
+              )
             }
-            tagNode.value = getComponentName(hyphenate(tagName))
-
-            // 组件增加 vueId
-            if (this.options.platform.isComponent(tagNode.value)) {
-              addVueId(path, this)
+            if (this.options.scopeId) {
+              addStaticClass(path, this.options.scopeId)
             }
-
-            // 查找全局组件
-            checkUsingGlobalComponents(
-              tagNode.value,
-              this.options.globalUsingComponents,
-              this
-            )
+            // 根节点无 attrs 时添加空对象，方便后续合并外层 attrs
+            if (this.options.mergeVirtualHostAttributes && !t.isObjectExpression(path.node.arguments[1]) && isRootElement(path)) {
+              path.node.arguments.splice(1, 0, t.objectExpression([]))
+            }
+            const dataPath = path.get('arguments.1')
+            dataPath && dataPath.isObjectExpression() && traverseData(dataPath, this, tagNode.value)
           }
-          if (this.options.scopeId) {
-            addStaticClass(path, this.options.scopeId)
-          }
-
-          const dataPath = path.get('arguments.1')
-          dataPath && dataPath.isObjectExpression() && traverseData(dataPath, this, tagNode.value)
           break
         case METHOD_TO_STRING:
-          const stringNodes = path.node.arguments[0]
-          stringNodes.$toString = true
-          path.replaceWith(stringNodes)
+          {
+            const stringPath = path.get('arguments.0')
+            if (hasEscapeQuote(stringPath)) {
+              // 属性中包含转义引号时部分小程序平台报错或显示异常
+              // TODO 简单情况翻转外层引号
+              stringPath.replaceWith(getMemberExpr(path, IDENTIFIER_TEXT, stringPath.node, this))
+            }
+            const stringNodes = stringPath.node
+            stringNodes.$toString = true
+            path.replaceWith(stringNodes)
+          }
           break
         case METHOD_RENDER_LIST:
           traverseRenderList(path, this)
@@ -192,11 +230,21 @@ module.exports = {
                 path =>
                   path.isObjectProperty() && ['on', 'nativeOn'].includes(path.node.key.name)
               )
+              // path is model.callback
+              // || path.findParent(path => path.isObjectProperty() && path.node.key.name === 'callback' && t.isFunctionExpression(path.node.value) && t.isObjectProperty(path.parentPath.parentPath) && path.parentPath.parentPath.node.key.name === 'model')
             ) {
               // event
               return path.skip()
             }
-
+            let newPath = path
+            while (newPath) {
+              path = newPath
+              newPath = path.findParent((path) => path.isLogicalExpression())
+            }
+            path.skip()
+            if (path.findParent((path) => path.shouldSkip)) {
+              return
+            }
             path.replaceWith(
               getMemberExpr(
                 path,
@@ -207,6 +255,12 @@ module.exports = {
                 this
               )
             )
+          } else if (this.options.scopedSlotsCompiler === 'auto' || this.options.scopedSlotsCompiler === 'augmented') {
+            if (methodName === METHOD_RESOLVE_SCOPED_SLOTS) {
+              getResolveScopedSlots(path, this)
+            } else if (methodName === METHOD_RENDER_SLOT) {
+              getRenderSlot(path, this)
+            }
           }
           break
       }
@@ -221,6 +275,15 @@ module.exports = {
       t.isMemberExpression(callee) // message.split('').reverse().join('')
     ) {
       // Object.assign...
+      let newPath = path
+      while (newPath) {
+        path = newPath
+        newPath = path.findParent((path) => path.isLogicalExpression())
+      }
+      path.skip()
+      if (path.findParent((path) => path.shouldSkip)) {
+        return
+      }
       path.replaceWith(getMemberExpr(path, IDENTIFIER_GLOBAL, path.node, this))
     }
   },

@@ -1,4 +1,25 @@
 import {
+  uni
+} from 'uni-core/service/uni'
+import EventChannel from 'uni-helpers/EventChannel'
+import {
+  invokeCallbackHandler,
+  removeCallbackHandler
+} from 'uni-helpers/api'
+
+import {
+  publishHandler
+} from 'uni-platform/service/publish-handler'
+
+import {
+  wx
+} from './wx'
+
+import {
+  definePage
+} from '../page-factory'
+
+import {
   getApp,
   registerApp
 } from './framework/app'
@@ -8,26 +29,22 @@ import {
   getCurrentPages
 } from './framework/page'
 
-import {
-  registerConfig
-} from './framework/config'
+import vuePlugin from './framework/plugins'
 
-import {
-  uni
-} from 'uni-core/service/uni'
+// 挂靠在uni上，暂不做全局导出
+uni.__$wx__ = wx
 
-import {
-  invokeCallbackHandler
-} from 'uni-helpers/api'
-
-UniServiceJSBridge.publishHandler = UniServiceJSBridge.emit // TODO
+UniServiceJSBridge.publishHandler = publishHandler
 UniServiceJSBridge.invokeCallbackHandler = invokeCallbackHandler
+UniServiceJSBridge.removeCallbackHandler = removeCallbackHandler
 
 export default {
-  __registerConfig: registerConfig,
+  __vuePlugin: vuePlugin,
+  __definePage: definePage,
   __registerApp: registerApp,
   __registerPage: registerPage,
   uni,
   getApp,
-  getCurrentPages
+  getCurrentPages,
+  EventChannel
 }

@@ -1,8 +1,17 @@
 import {
-  normalizeDataset
+  getTargetDataset
 } from 'uni-helpers/index'
 
+import {
+  camelize
+} from 'uni-shared'
+
 import getWindowOffset from 'uni-platform/helpers/get-window-offset'
+
+import {
+  findElm,
+  elementMatchesPolyfill
+} from './util'
 
 function getRootInfo (fields) {
   const info = {}
@@ -23,8 +32,12 @@ function getRootInfo (fields) {
     info.height = document.documentElement.clientHeight
   }
   if (fields.scrollOffset) {
-    info.scrollLeft = document.documentElement.scrollLeft || document.body.scrollLeft || 0
-    info.scrollTop = document.documentElement.scrollTop || document.body.scrollTop || 0
+    const documentElement = document.documentElement
+    const body = document.body
+    info.scrollLeft = documentElement.scrollLeft || body.scrollLeft || 0
+    info.scrollTop = documentElement.scrollTop || body.scrollTop || 0
+    info.scrollHeight = documentElement.scrollHeight || body.scrollHeight || 0
+    info.scrollWidth = documentElement.scrollWidth || body.scrollWidth || 0
   }
   return info
 }
@@ -34,11 +47,17 @@ function getNodeInfo (el, fields) {
   const {
     top
   } = getWindowOffset()
+  if (fields.node) {
+    const tagName = el.tagName.split('-')[1] || el.tagName
+    if (tagName) {
+      info.node = el.querySelector(tagName)
+    }
+  }
   if (fields.id) {
     info.id = el.id
   }
   if (fields.dataset) {
-    info.dataset = normalizeDataset(el.dataset || {})
+    info.dataset = getTargetDataset(el)
   }
   if (fields.rect || fields.size) {
     const rect = el.getBoundingClientRect()
@@ -46,21 +65,25 @@ function getNodeInfo (el, fields) {
       info.left = rect.left
       info.right = rect.right
       info.top = rect.top - top
-      info.bottom = rect.bottom
+      info.bottom = rect.bottom - top
     }
     if (fields.size) {
       info.width = rect.width
       info.height = rect.height
     }
   }
-  // TODO 组件 props
-  if (fields.properties) {
-    fields.properties.forEach(prop => {
-      prop = prop.replace(/-([a-z])/g, function (e, t) {
-        return t.toUpperCase()
+  if (Array.isArray(fields.properties)) {
+    const props = el.__vue__ && el.__vue__.$props
+    if (props) {
+      fields.properties.forEach(prop => {
+        if (typeof prop === 'string') {
+          prop = camelize(prop)
+          if (props[prop] != null) {
+            info[prop] = props[prop]
+          }
+        }
       })
-      // props
-    })
+    }
   }
   if (fields.scrollOffset) {
     if (el.tagName === 'UNI-SCROLL-VIEW' && el.__vue__ && el.__vue__.getScrollPosition) {
@@ -68,22 +91,35 @@ function getNodeInfo (el, fields) {
     } else {
       info.scrollLeft = 0
       info.scrollTop = 0
+      info.scrollHeight = 0
+      info.scrollWidth = 0
+    }
+  }
+  if (Array.isArray(fields.computedStyle)) {
+    const sytle = getComputedStyle(el)
+    fields.computedStyle.forEach(name => {
+      info[name] = sytle[name]
+    })
+  }
+  if (fields.context) {
+    if (el.__vue__ && el.__vue__._getContextInfo) {
+      info.context = el.__vue__._getContextInfo()
     }
   }
   return info
 }
 
 function getNodesInfo (pageVm, component, selector, single, fields) {
-  /* eslint-disable no-mixed-operators */
-  const $el = component && component.$el || pageVm.$el
+  const $el = elementMatchesPolyfill(findElm(component, pageVm))
+  if (!$el || ($el && $el.nodeType === 8)) { // Comment
+    return single ? null : []
+  }
   if (single) {
-    const node = $el && ($el.matches(selector) ? $el : $el.querySelector(selector))
+    const node = $el.matches(selector) ? $el : $el.querySelector(selector)
     if (node) {
       return getNodeInfo(node, fields)
     }
     return null
-  } else if (!$el) {
-    return []
   } else {
     let infos = []
     const nodeList = $el.querySelectorAll(selector)
@@ -93,7 +129,7 @@ function getNodesInfo (pageVm, component, selector, single, fields) {
       })
     }
     if ($el.matches(selector)) {
-      infos.unshift($el)
+      infos.unshift(getNodeInfo($el, fields))
     }
     return infos
   }
@@ -103,15 +139,17 @@ export function requestComponentInfo ({
   reqId,
   reqs
 }, pageId) {
-  const pages = getCurrentPages() // 跨平台时，View 层也应该实现该方法，举例 App 上，View 层的 getCurrentPages 返回长度为1的当前页面数组
-
-  const pageVm = pages.find(page => page.$page.id === pageId)
-
-  if (!pageVm) {
-    // TODO 是否需要 defer
-    throw new Error(`Not Found：Page[${pageId}]`)
+  let pageVm
+  if (pageId._isVue) {
+    pageVm = pageId
+  } else {
+    const pages = getCurrentPages() // 跨平台时，View 层也应该实现该方法，举例 App 上，View 层的 getCurrentPages 返回长度为1的当前页面数组
+    const page = pages.find(page => page.$page.id === pageId)
+    if (!page) {
+      throw new Error(`Not Found：Page[${pageId}]`)
+    }
+    pageVm = page.$vm
   }
-
   const result = []
   reqs.forEach(function ({
     component,
@@ -129,5 +167,5 @@ export function requestComponentInfo ({
   UniViewJSBridge.publishHandler('onRequestComponentInfo', {
     reqId,
     res: result
-  }, pageVm.$page.id)
+  })
 }

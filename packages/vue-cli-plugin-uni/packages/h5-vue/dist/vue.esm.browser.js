@@ -1,6 +1,6 @@
 /*!
- * Vue.js v2.6.10
- * (c) 2014-2019 Evan You
+ * Vue.js v2.6.11
+ * (c) 2014-2022 Evan You
  * Released under the MIT License.
  */
 /*  */
@@ -638,6 +638,9 @@ let formatComponentName = (noop);
 
   formatComponentName = (vm, includeFile) => {
     if (vm.$root === vm) {
+      if (vm.$options && vm.$options.__file) { // fixed by xxxxxx
+        return ('at ') + vm.$options.__file
+      }
       return '<Root>'
     }
     const options = typeof vm === 'function' && vm.cid != null
@@ -672,7 +675,7 @@ let formatComponentName = (noop);
     if (vm._isVue && vm.$parent) {
       const tree = [];
       let currentRecursiveSequence = 0;
-      while (vm) {
+      while (vm && vm.$options.name !== 'PageBody') {
         if (tree.length > 0) {
           const last = tree[tree.length - 1];
           if (last.constructor === vm.constructor) {
@@ -684,7 +687,7 @@ let formatComponentName = (noop);
             currentRecursiveSequence = 0;
           }
         }
-        tree.push(vm);
+        !vm.$options.isReserved && tree.push(vm);
         vm = vm.$parent;
       }
       return '\n\nfound in\n\n' + tree
@@ -754,18 +757,20 @@ class Dep {
 // can be evaluated at a time.
 // fixed by xxxxxx (nvue shared vuex)
 /* eslint-disable no-undef */
-Dep.SharedObject = typeof SharedObject !== 'undefined' ? SharedObject : {};
+Dep.SharedObject = {};
 Dep.SharedObject.target = null;
 Dep.SharedObject.targetStack = [];
 
 function pushTarget (target) {
   Dep.SharedObject.targetStack.push(target);
   Dep.SharedObject.target = target;
+  Dep.target = target;
 }
 
 function popTarget () {
   Dep.SharedObject.targetStack.pop();
   Dep.SharedObject.target = Dep.SharedObject.targetStack[Dep.SharedObject.targetStack.length - 1];
+  Dep.target = Dep.SharedObject.target;
 }
 
 /*  */
@@ -2001,7 +2006,7 @@ if (typeof Promise !== 'undefined' && isNative(Promise)) {
   isUsingMicroTask = true;
 } else if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) {
   // Fallback to setImmediate.
-  // Techinically it leverages the (macro) task queue,
+  // Technically it leverages the (macro) task queue,
   // but it is still a better choice than setTimeout.
   timerFunc = () => {
     setImmediate(flushCallbacks);
@@ -2090,7 +2095,7 @@ let initProxy;
     warn(
       `Property "${key}" must be accessed with "$data.${key}" because ` +
       'properties starting with "$" or "_" are not proxied in the Vue instance to ' +
-      'prevent conflicts with Vue internals' +
+      'prevent conflicts with Vue internals. ' +
       'See: https://vuejs.org/v2/api/#data',
       target
     );
@@ -2298,17 +2303,50 @@ function mergeVNodeHook (def, hookKey, hook) {
 
 /*  */
 
+// fixed by xxxxxx (mp properties)
+function extractPropertiesFromVNodeData(data, Ctor, res, context) {
+  const propOptions = Ctor.options.mpOptions && Ctor.options.mpOptions.properties;
+  if (isUndef(propOptions)) {
+    return res
+  }
+  const externalClasses = Ctor.options.mpOptions.externalClasses || [];
+  const {
+    attrs,
+    props
+  } = data;
+  if (isDef(attrs) || isDef(props)) {
+    for (const key in propOptions) {
+      const altKey = hyphenate(key);
+      const result = checkProp(res, props, key, altKey, true) ||
+          checkProp(res, attrs, key, altKey, false);
+      // externalClass
+      if (
+        result &&
+        res[key] &&
+        externalClasses.indexOf(altKey) !== -1 &&
+        context[camelize(res[key])]
+      ) {
+        // 赋值 externalClass 真正的值(模板里 externalClass 的值可能是字符串)
+        res[key] = context[camelize(res[key])];
+      }
+    }
+  }
+  return res
+}
+
 function extractPropsFromVNodeData (
   data,
   Ctor,
-  tag
+  tag,
+  context,// fixed by xxxxxx
 ) {
   // we are only extracting raw values here.
   // validation and default values are handled in the child
   // component itself.
   const propOptions = Ctor.options.props;
   if (isUndef(propOptions)) {
-    return
+    // fixed by xxxxxx
+    return extractPropertiesFromVNodeData(data, Ctor, {}, context)
   }
   const res = {};
   const { attrs, props } = data;
@@ -2335,7 +2373,8 @@ function extractPropsFromVNodeData (
       checkProp(res, attrs, key, altKey, false);
     }
   }
-  return res
+  // fixed by xxxxxx
+  return extractPropertiesFromVNodeData(data, Ctor, res, context)
 }
 
 function checkProp (
@@ -2668,12 +2707,12 @@ function renderList (
   if (Array.isArray(val) || typeof val === 'string') {
     ret = new Array(val.length);
     for (i = 0, l = val.length; i < l; i++) {
-      ret[i] = render(val[i], i);
+      ret[i] = render(val[i], i, i, i); // fixed by xxxxxx
     }
   } else if (typeof val === 'number') {
     ret = new Array(val);
     for (i = 0; i < val; i++) {
-      ret[i] = render(i + 1, i);
+      ret[i] = render(i + 1, i, i, i); // fixed by xxxxxx
     }
   } else if (isObject(val)) {
     if (hasSymbol && val[Symbol.iterator]) {
@@ -2681,7 +2720,7 @@ function renderList (
       const iterator = val[Symbol.iterator]();
       let result = iterator.next();
       while (!result.done) {
-        ret.push(render(result.value, ret.length));
+        ret.push(render(result.value, ret.length, i, i++)); // fixed by xxxxxx
         result = iterator.next();
       }
     } else {
@@ -2689,7 +2728,7 @@ function renderList (
       ret = new Array(keys.length);
       for (i = 0, l = keys.length; i < l; i++) {
         key = keys[i];
-        ret[i] = render(val[key], key, i);
+        ret[i] = render(val[key], key, i, i); // fixed by xxxxxx
       }
     }
   }
@@ -2724,7 +2763,8 @@ function renderSlot (
       }
       props = extend(extend({}, bindObject), props);
     }
-    nodes = scopedSlotFn(props) || fallback;
+    // fixed by xxxxxx app-plus scopedSlot
+    nodes = scopedSlotFn(props, this, props._i) || fallback;
   } else {
     nodes = this.$slots[name] || fallback;
   }
@@ -2950,7 +2990,7 @@ function bindDynamicKeys (baseObj, values) {
     if (typeof key === 'string' && key) {
       baseObj[values[i]] = values[i + 1];
     } else if (key !== '' && key !== null) {
-      // null is a speical value for explicitly removing a binding
+      // null is a special value for explicitly removing a binding
       warn(
         `Invalid value for dynamic directive argument (expected string or null): ${key}`,
         this
@@ -3171,6 +3211,8 @@ const componentVNodeHooks = {
   insert (vnode) {
     const { context, componentInstance } = vnode;
     if (!componentInstance._isMounted) {
+      callHook(componentInstance, 'onServiceCreated');
+      callHook(componentInstance, 'onServiceAttached');
       componentInstance._isMounted = true;
       callHook(componentInstance, 'mounted');
     }
@@ -3260,7 +3302,7 @@ function createComponent (
   }
 
   // extract props
-  const propsData = extractPropsFromVNodeData(data, Ctor, tag);
+  const propsData = extractPropsFromVNodeData(data, Ctor, tag, context); // fixed by xxxxxx
 
   // functional component
   if (isTrue(Ctor.options.functional)) {
@@ -3442,6 +3484,12 @@ function _createElement (
     ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag);
     if (config.isReservedTag(tag)) {
       // platform built-in elements
+      if (isDef(data) && isDef(data.nativeOn)) {
+        warn(
+          `The .native modifier for v-on is only valid on components but it was used on <${tag}>.`,
+          context
+        );
+      }
       vnode = new VNode(
         config.parsePlatformTagName(tag), data, children,
         undefined, undefined, context
@@ -3565,7 +3613,7 @@ function renderMixin (Vue) {
     // render self
     let vnode;
     try {
-      // There's no need to maintain a stack becaues all render fns are called
+      // There's no need to maintain a stack because all render fns are called
       // separately from one another. Nested component's render fns are called
       // when parent component is patched.
       currentRenderingInstance = vm;
@@ -4104,6 +4152,9 @@ function mountComponent (
   // manually mounted instance, call mounted on self
   // mounted is called for render-created child components in its inserted hook
   if (vm.$vnode == null) {
+    // fixed by xxxxxx
+    callHook(vm, 'onServiceCreated');
+    callHook(vm, 'onServiceAttached');
     vm._isMounted = true;
     callHook(vm, 'mounted');
   }
@@ -4172,7 +4223,10 @@ function updateChildComponent (
     // keep a copy of raw propsData
     vm.$options.propsData = propsData;
   }
-
+  
+  // fixed by xxxxxx update properties(mp runtime)
+  vm._$updateProperties && vm._$updateProperties(vm);
+  
   // update listeners
   listeners = listeners || emptyObject;
   const oldListeners = vm.$options._parentListeners;
@@ -5035,10 +5089,10 @@ function initMixin (Vue) {
     initEvents(vm);
     initRender(vm);
     callHook(vm, 'beforeCreate');
-    vm.mpHost !== 'mp-toutiao' && initInjections(vm); // resolve injections before data/props  
+    !vm._$fallback && initInjections(vm); // resolve injections before data/props  
     initState(vm);
-    vm.mpHost !== 'mp-toutiao' && initProvide(vm); // resolve provide after data/props
-    vm.mpHost !== 'mp-toutiao' && callHook(vm, 'created');      
+    !vm._$fallback && initProvide(vm); // resolve provide after data/props
+    !vm._$fallback && callHook(vm, 'created');      
 
     /* istanbul ignore if */
     if (config.performance && mark) {
@@ -5474,7 +5528,7 @@ Object.defineProperty(Vue, 'FunctionalRenderContext', {
   value: FunctionalRenderContext
 });
 
-Vue.version = '2.6.10';
+Vue.version = '2.6.11';
 
 /*  */
 
@@ -6117,10 +6171,13 @@ function createPatchFunction (backend) {
       }
     }
     // for slot content they should also get the scopeId from the host instance.
+    // ignore uni-app web components
     if (isDef(i = activeInstance) &&
       i !== vnode.context &&
       i !== vnode.fnContext &&
-      isDef(i = i.$options._scopeId)
+      isDef(i = i.$options._scopeId) &&
+      // TODO use other flag
+      !activeInstance._vnode.elm.__uniDataset
     ) {
       nodeOps.setStyleScope(vnode.elm, i);
     }
@@ -6146,7 +6203,7 @@ function createPatchFunction (backend) {
     }
   }
 
-  function removeVnodes (parentElm, vnodes, startIdx, endIdx) {
+  function removeVnodes (vnodes, startIdx, endIdx) {
     for (; startIdx <= endIdx; ++startIdx) {
       const ch = vnodes[startIdx];
       if (isDef(ch)) {
@@ -6257,7 +6314,7 @@ function createPatchFunction (backend) {
       refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm;
       addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
     } else if (newStartIdx > newEndIdx) {
-      removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
+      removeVnodes(oldCh, oldStartIdx, oldEndIdx);
     }
   }
 
@@ -6349,7 +6406,7 @@ function createPatchFunction (backend) {
         if (isDef(oldVnode.text)) nodeOps.setTextContent(elm, '');
         addVnodes(elm, null, ch, 0, ch.length - 1, insertedVnodeQueue);
       } else if (isDef(oldCh)) {
-        removeVnodes(elm, oldCh, 0, oldCh.length - 1);
+        removeVnodes(oldCh, 0, oldCh.length - 1);
       } else if (isDef(oldVnode.text)) {
         nodeOps.setTextContent(elm, '');
       }
@@ -6576,7 +6633,7 @@ function createPatchFunction (backend) {
 
         // destroy old node
         if (isDef(parentElm)) {
-          removeVnodes(parentElm, [oldVnode], 0, 0);
+          removeVnodes([oldVnode], 0, 0);
         } else if (isDef(oldVnode.tag)) {
           invokeDestroyHook(oldVnode);
         }
@@ -6747,13 +6804,24 @@ function updateWxsProps(oldVnode, vnode) {
   vnode.$wxsWatches = {};
 
   Object.keys(wxsProps).forEach(prop => {
-    vnode.$wxsWatches[prop] = oldWxsWatches[prop] || vnode.context.$watch(prop, function(newVal, oldVal) {
+    // app-plus view wxs
+    let watchProp = prop;
+    if (vnode.context.wxsProps) {
+      watchProp = 'wxsProps.' + prop;
+    }
+
+    vnode.$wxsWatches[prop] = oldWxsWatches[prop] || vnode.context.$watch(watchProp, function(newVal, oldVal) {
+      // vue component / web component
+      const component = vnode.elm.__vue__ || vnode.elm;
       wxsProps[prop](
         newVal,
         oldVal,
-        context.$getComponentDescriptor(),
-        vnode.elm.__vue__.$getComponentDescriptor()
+        context.$getComponentDescriptor(context, true),
+        component.$getComponentDescriptor && component.$getComponentDescriptor(component, false)
       );
+    }, {
+      immediate: true, // 当 prop 的值被设置 WXS 函数就会触发，而不只是值发生改变，所以在页面初始化的时候会调用一次 WxsPropObserver 的函数
+      deep: true
     });
   });
 
@@ -6922,7 +6990,17 @@ function updateClass (oldVnode, vnode) {
     });
     cls = Object.keys(clsObj).join(' ');
   }
-
+  // fixed by xxxxxx (仅 h5 平台 extenalClasses)
+  const context = vnode.context;
+  const externalClasses = context.$options.mpOptions &&
+    context.$options.mpOptions.externalClasses;
+  if (Array.isArray(externalClasses)) {
+    externalClasses.forEach(externalClass => {
+      // 简单替换 externalClass
+      const externalClassValue = context[camelize(externalClass)];
+      externalClassValue && (cls = cls.replace(externalClass, externalClassValue));
+    });
+  }
   // set the class
   if (cls !== el._prevClass) {
     el.setAttribute('class', cls);
@@ -7439,7 +7517,7 @@ function model (
       );
     }
   }
-
+  
   if (el.component) {
     genComponentModel(el, value, modifiers);
     // component v-model doesn't need extra runtime
@@ -7885,7 +7963,7 @@ const cssVarRE = /^--/;
 const importantRE = /\s*!important$/;
 
 // upx,rpx 正则匹配
-const unitRE = /([+-]?\d+(\.\d+)?)[r|u]px/g;
+const unitRE = /\b([+-]?\d+(\.\d+)?)[r|u]px\b/g;
 
 const transformUnit = (val) => {
   if (typeof val === 'string') {
@@ -7897,7 +7975,23 @@ const transformUnit = (val) => {
   return val
 };
 
-const setProp = (el, name, val) => {
+const urlRE1 = /url\(\s*['"](.+?\.(jpg|gif|png))['"]\s*\)/;
+const urlRE2 = /url\(\s*([a-zA-Z0-9\.\-\_\/]+?\.(jpg|gif|png))\s*\)/;
+
+const transformUrl = (val, ctx) => {
+  if (typeof val === 'string' && val.indexOf('url(') !== -1) {
+    const matches = val.match(urlRE1) || val.match(urlRE2);
+    if (matches && matches.length === 3) {
+        val = val.replace(matches[1], ctx._$getRealPath(matches[1]));
+    }
+  }
+  return val
+};
+
+const setProp = (el, name, val, ctx) => {
+  if(ctx && ctx._$getRealPath && val){
+    val = transformUrl(val, ctx);
+  }
   /* istanbul ignore if */
   if (cssVarRE.test(name)) {
     el.style.setProperty(name, val);
@@ -7948,7 +8042,7 @@ function updateStyle (oldVnode, vnode) {
   }
 
   let cur, name;
-  
+
   const oldStaticStyle = oldData.staticStyle;
   const oldStyleBinding = oldData.normalizedStyle || oldData.style || {};
 
@@ -7981,7 +8075,7 @@ function updateStyle (oldVnode, vnode) {
     cur = newStyle[name];
     if (cur !== oldStyle[name]) {
       // ie9 setting to null has no effect, must use empty string
-      setProp(el, name, cur == null ? '' : cur);
+      setProp(el, name, cur == null ? '' : cur, vnode.context);
     }
   }
 }
@@ -9172,7 +9266,7 @@ Vue.prototype.__call_hook = function(hook, args) {
       }
   }
   if (vm._hasHookEvent) {
-      vm.$emit('hook:' + hook);
+      vm.$emit('hook:' + hook, args);
   }
   popTarget();
   return ret
@@ -9397,7 +9491,7 @@ const startTagOpen = new RegExp(`^<${qnameCapture}`);
 const startTagClose = /^\s*(\/?)>/;
 const endTag = new RegExp(`^<\\/${qnameCapture}[^>]*>`);
 const doctype = /^<!DOCTYPE [^>]+>/i;
-// #7298: escape - to avoid being pased as HTML comment when inlined in page
+// #7298: escape - to avoid being passed as HTML comment when inlined in page
 const comment = /^<!\--/;
 const conditionalComment = /^<!\[/;
 
@@ -9609,7 +9703,9 @@ function parseHTML (html, options) {
         : options.shouldDecodeNewlines;
       attrs[i] = {
         name: args[1],
-        value: decodeAttr(value, shouldDecodeNewlines)
+        value: decodeAttr(value, shouldDecodeNewlines),
+        // fixed by xxxxxx 标记 Boolean Attribute
+        bool: args[3] === undefined && args[4] === undefined && args[5] === undefined
       };
       if (options.outputSourceRange) {
         attrs[i].start = args.start + args[0].match(/^\s*/).length;
@@ -9682,7 +9778,7 @@ function parseHTML (html, options) {
 /*  */
 
 const onRE = /^@|^v-on:/;
-const dirRE = /^v-|^@|^:/;
+const dirRE = /^v-|^@|^:|^#/;
 const forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
 const forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
 const stripParensRE = /^\(|\)$/g;
@@ -10307,7 +10403,7 @@ function processSlotContent (el) {
           if (el.parent && !maybeComponent(el.parent)) {
             warn$2(
               `<template v-slot> can only appear at the root level inside ` +
-              `the receiving the component`,
+              `the receiving component`,
               el
             );
           }
@@ -10631,6 +10727,10 @@ function preTransformNode (el, options) {
       return
     }
 
+    if (process.env.UNI_PLATFORM !== 'h5') { // fixed by xxxxxx  非 h5 平台 type 不会是 checkbox,radio
+      return
+    }
+
     let typeBinding;
     if (map[':type'] || map['v-bind:type']) {
       typeBinding = getBindingAttr(el, 'type');
@@ -10724,333 +10824,16 @@ var wxs$1 = {
   genData: genData$2
 };
 
-const TAGS = [
-  'resize-sensor',
-  'ad',
-  'audio',
-  'button',
-  'camera',
-  'canvas',
-  'checkbox',
-  'checkbox-group',
-  'cover-image',
-  'cover-view',
-  'form',
-  'functional-page-navigator',
-  'icon',
-  'image',
-  'input',
-  'label',
-  'live-player',
-  'live-pusher',
-  'map',
-  'movable-area',
-  'movable-view',
-  'navigator',
-  'official-account',
-  'open-data',
-  'picker',
-  'picker-view',
-  'picker-view-column',
-  'progress',
-  'radio',
-  'radio-group',
-  'rich-text',
-  'scroll-view',
-  'slider',
-  'swiper',
-  'swiper-item',
-  'switch',
-  'text',
-  'textarea',
-  'video',
-  'view',
-  'web-view'
-];
-
-
-const simplePathRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/;
-
-function processEvent(expr, filterModules) {
-  const isMethodPath = simplePathRE.test(expr);
-  if (isMethodPath) {
-    if (filterModules.find(name => expr.indexOf(name + '.') === 0)) {
-      return `
-$event = $handleWxsEvent($event);
-${expr}($event, $getComponentDescriptor())
-`
-    } else {
-      expr = expr + '($event)';
-    }
-  }
-  return `
-$event = $handleEvent($event);
-${expr}
-`
-}
-
-const deprecated = {
-  events: {
-    'tap': 'click',
-    'longtap': 'longpress'
-  }
-};
-
-
-var tag = {
-  preTransformNode(el) {
-    if (TAGS.indexOf(el.tag) !== -1) {
-      el.tag = 'v-uni-' + el.tag;
-    }
-  },
-  postTransformNode(el, {
-    filterModules
-  }) {
-    if (el.tag === 'block') {
-      el.tag = 'template';
-      const vForKey = el.key;
-      if (vForKey) {
-        delete el.key;
-        el.children.forEach((childEl, index) => {
-          const childVForKey = childEl.key;
-          if (childVForKey) {
-            childEl.key = `${childVForKey}+'_'+${vForKey}+'_${index}'`;
-          } else {
-            childEl.key = `${vForKey}+'_${index}'`;
-          }
-        });
-      }
-    }
-    if (el.events) {
-      filterModules = filterModules || [];
-      const {
-        events: eventsMap
-      } = deprecated;
-      // const warnLogs = new Set()
-      Object.keys(el.events).forEach(name => {
-        // 过时事件类型转换
-        if (eventsMap[name]) {
-          el.events[eventsMap[name]] = el.events[name];
-          delete el.events[name];
-          // warnLogs.add(`警告：事件${name}已过时，推荐使用${eventsMap[name]}代替`)
-          name = eventsMap[name];
-        }
-
-        const handlers = el.events[name];
-        if (Array.isArray(handlers)) {
-          handlers.forEach(handler => {
-            handler.value = processEvent(handler.value, filterModules);
-          });
-        } else {
-          handlers.value = processEvent(handlers.value, filterModules);
-        }
-      });
-    }
-  }
-};
-
-// TODO 待优化
-
-var validDivisionCharRE$1 = /[\w).+\-_$\]]/;
-
-function parseFilters$1(exp) {
-  var inSingle = false;
-  var inDouble = false;
-  var inTemplateString = false;
-  var inRegex = false;
-  var curly = 0;
-  var square = 0;
-  var paren = 0;
-  var lastFilterIndex = 0;
-  var c, prev, i, expression, filters;
-
-  for (i = 0; i < exp.length; i++) {
-    prev = c;
-    c = exp.charCodeAt(i);
-    if (inSingle) {
-      if (c === 0x27 && prev !== 0x5C) {
-        inSingle = false;
-      }
-    } else if (inDouble) {
-      if (c === 0x22 && prev !== 0x5C) {
-        inDouble = false;
-      }
-    } else if (inTemplateString) {
-      if (c === 0x60 && prev !== 0x5C) {
-        inTemplateString = false;
-      }
-    } else if (inRegex) {
-      if (c === 0x2f && prev !== 0x5C) {
-        inRegex = false;
-      }
-    } else if (
-      c === 0x7C && // pipe
-      exp.charCodeAt(i + 1) !== 0x7C &&
-      exp.charCodeAt(i - 1) !== 0x7C &&
-      !curly && !square && !paren
-    ) {
-      if (expression === undefined) {
-        // first filter, end of expression
-        lastFilterIndex = i + 1;
-        expression = exp.slice(0, i).trim();
-      } else {
-        pushFilter();
-      }
-    } else {
-      switch (c) {
-        case 0x22:
-          inDouble = true;
-          break // "
-        case 0x27:
-          inSingle = true;
-          break // '
-        case 0x60:
-          inTemplateString = true;
-          break // `
-        case 0x28:
-          paren++;
-          break // (
-        case 0x29:
-          paren--;
-          break // )
-        case 0x5B:
-          square++;
-          break // [
-        case 0x5D:
-          square--;
-          break // ]
-        case 0x7B:
-          curly++;
-          break // {
-        case 0x7D:
-          curly--;
-          break // }
-      }
-      if (c === 0x2f) { // /
-        var j = i - 1;
-        var p = (void 0);
-        // find first non-whitespace prev char
-        for (; j >= 0; j--) {
-          p = exp.charAt(j);
-          if (p !== ' ') {
-            break
-          }
-        }
-        if (!p || !validDivisionCharRE$1.test(p)) {
-          inRegex = true;
-        }
-      }
-    }
-  }
-
-  if (expression === undefined) {
-    expression = exp.slice(0, i).trim();
-  } else if (lastFilterIndex !== 0) {
-    pushFilter();
-  }
-
-  function pushFilter() {
-    (filters || (filters = [])).push(exp.slice(lastFilterIndex, i).trim());
-    lastFilterIndex = i + 1;
-  }
-
-  if (filters) {
-    for (i = 0; i < filters.length; i++) {
-      expression = wrapFilter$1(expression, filters[i]);
-    }
-  }
-
-  return expression
-}
-
-function wrapFilter$1(exp, filter) {
-  var i = filter.indexOf('(');
-  if (i < 0) {
-    // _f: resolveFilter
-    return ('_f("' + filter + '")(' + exp + ')')
-  } else {
-    var name = filter.slice(0, i);
-    var args = filter.slice(i + 1);
-    return ('_f("' + name + '")(' + exp + (args !== ')' ? ',' + args : args))
-  }
-}
-const defaultTagRE$1 = /\{\{((?:.|\n)+?)\}\}/g;
-
-function parseText$1(
-  text
-) {
-  const tokens = [];
-  const rawTokens = [];
-
-  let lastIndex = defaultTagRE$1.lastIndex = 0;
-  let match, index, tokenValue;
-
-  while ((match = defaultTagRE$1.exec(text))) {
-    index = match.index;
-    // push text token
-    if (index > lastIndex) {
-      rawTokens.push(tokenValue = text.slice(lastIndex, index));
-      tokens.push(JSON.stringify(tokenValue));
-    }
-    // tag token
-    var exp = parseFilters$1(match[1].trim());
-    tokens.push(('_s(' + exp + ')'));
-    rawTokens.push({
-      '@binding': exp
-    });
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    rawTokens.push(tokenValue = text.slice(lastIndex));
-    tokens.push(JSON.stringify(tokenValue));
-  }
-  return {
-    expression: tokens.join('+'),
-    tokens: rawTokens
-  }
-}
-
-var text = {
-  postTransformNode(el) { // 重新格式化 text 节点,应该使用postTransformNode,但 mpvue 使用的 template-compiler 较老，导致 postTransformNode 时机不对
-    const children = el.children;
-    if (children && children.length) {
-      children.forEach(childEl => {
-        if (childEl.text) {
-          const text = childEl.text.trim();
-          if (childEl.type === 2) {
-            try {
-              const {
-                expression,
-                tokens
-              } = parseText$1(text);
-              childEl.expression = expression;
-              childEl.tokens = tokens;
-              childEl.text = text;
-            } catch (e) {
-              console.log(e);
-            }
-          } else {
-            childEl.text = text;
-          }
-        }
-      });
-    }
-    return ''
-  }
-};
-
 var modules$1 = [
-  text,// fixed by xxxxxx
   wxs$1,// fixed by xxxxxx
   klass$1,
   style$1,
-  model$1,
-  tag,// fixed by xxxxxx
+  model$1
 ];
 
 /*  */
 
-function text$1 (el, dir) {
+function text (el, dir) {
   if (dir.value) {
     addProp(el, 'textContent', `_s(${dir.value})`, dir);
   }
@@ -11066,7 +10849,7 @@ function html (el, dir) {
 
 var directives$1 = {
   model,
-  text: text$1,
+  text,
   html
 };
 
@@ -11214,9 +10997,9 @@ function isDirectChildOfTemplateFor (node) {
 
 /*  */
 
-const fnExpRE = /^([\w$_]+|\([^)]*?\))\s*=>|^function\s*(?:[\w$]+)?\s*\(/;
+const fnExpRE = /^([\w$_]+|\([^)]*?\))\s*=>|^function(?:\s+[\w$]+)?\s*\(/;
 const fnInvokeRE = /\([^)]*?\);*$/;
-const simplePathRE$1 = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/;
+const simplePathRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/;
 
 // KeyboardEvent.keyCode aliases
 const keyCodes = {
@@ -11298,9 +11081,9 @@ function genHandler (handler) {
     return `[${handler.map(handler => genHandler(handler)).join(',')}]`
   }
 
-  const isMethodPath = simplePathRE$1.test(handler.value);
+  const isMethodPath = simplePathRE.test(handler.value);
   const isFunctionExpression = fnExpRE.test(handler.value);
-  const isFunctionInvocation = simplePathRE$1.test(handler.value.replace(fnInvokeRE, ''));
+  const isFunctionInvocation = simplePathRE.test(handler.value.replace(fnInvokeRE, ''));
 
   if (!handler.modifiers) {
     if (isMethodPath || isFunctionExpression) {
@@ -11592,7 +11375,7 @@ function genFor (
   const alias = el.alias;
   const iterator1 = el.iterator1 ? `,${el.iterator1}` : '';
   const iterator2 = el.iterator2 ? `,${el.iterator2}` : '';
-
+  const iterator3 = el.iterator3 ? `,${el.iterator3}` : ''; // fixed by xxxxxx
   if (state.maybeComponent(el) &&
     el.tag !== 'slot' &&
     el.tag !== 'template' &&
@@ -11609,7 +11392,7 @@ function genFor (
 
   el.forProcessed = true; // avoid recursion
   return `${altHelper || '_l'}((${exp}),` +
-    `function(${alias}${iterator1}${iterator2}){` +
+    `function(${alias}${iterator1}${iterator2}${iterator3}){` + // fixed by xxxxxx
       `return ${(altGen || genElement)(el, state)}` +
     '})'
 }
@@ -12039,6 +11822,8 @@ function checkNode (node, warn) {
           const range = node.rawAttrsMap[name];
           if (name === 'v-for') {
             checkFor(node, `v-for="${value}"`, warn, range);
+          } else if (name === 'v-slot' || name[0] === '#') {
+            checkFunctionParameterExpression(value, `${name}="${value}"`, warn, range);
           } else if (onRE.test(name)) {
             checkEvent(value, `${name}="${value}"`, warn, range);
           } else {
@@ -12058,9 +11843,9 @@ function checkNode (node, warn) {
 }
 
 function checkEvent (exp, text, warn, range) {
-  const stipped = exp.replace(stripStringRE, '');
-  const keywordMatch = stipped.match(unaryOperatorsRE);
-  if (keywordMatch && stipped.charAt(keywordMatch.index - 1) !== '$') {
+  const stripped = exp.replace(stripStringRE, '');
+  const keywordMatch = stripped.match(unaryOperatorsRE);
+  if (keywordMatch && stripped.charAt(keywordMatch.index - 1) !== '$') {
     warn(
       `avoid using JavaScript unary operator as property name: ` +
       `"${keywordMatch[0]}" in expression ${text.trim()}`,
@@ -12112,6 +11897,19 @@ function checkExpression (exp, text, warn, range) {
         range
       );
     }
+  }
+}
+
+function checkFunctionParameterExpression (exp, text, warn, range) {
+  try {
+    new Function(exp, '');
+  } catch (e) {
+    warn(
+      `invalid function parameter expression: ${e.message} in\n\n` +
+      `    ${exp}\n\n` +
+      `  Raw expression: ${text.trim()}\n`,
+      range
+    );
   }
 }
 

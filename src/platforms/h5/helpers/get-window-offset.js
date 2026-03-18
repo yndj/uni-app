@@ -2,13 +2,21 @@ import {
   NAVBAR_HEIGHT,
   TABBAR_HEIGHT
 } from 'uni-helpers/constants'
+import safeAreaInsets from 'safe-area-insets'
 
 export default function getWindowOffset () {
   if (uni.canIUse('css.var')) {
     const style = document.documentElement.style
+    const top = parseInt((style.getPropertyValue('--window-top').match(/\d+/) || ['0'])[0])
+    const bottom = parseInt((style.getPropertyValue('--window-bottom').match(/\d+/) || ['0'])[0])
+    const left = parseInt((style.getPropertyValue('--window-left').match(/\d+/) || ['0'])[0])
+    const right = parseInt((style.getPropertyValue('--window-right').match(/\d+/) || ['0'])[0])
+    const topWindowHeight = parseInt((style.getPropertyValue('--top-window-height').match(/\d+/) || ['0'])[0])
     return {
-      top: parseInt(style.getPropertyValue('--window-top')) || 0,
-      bottom: parseInt(style.getPropertyValue('--window-bottom')) || 0
+      top: (top ? (top + safeAreaInsets.top) : 0) + (topWindowHeight || 0),
+      bottom: bottom ? (bottom + safeAreaInsets.bottom) : 0,
+      left: left ? (left + safeAreaInsets.left) : 0,
+      right: right ? (right + safeAreaInsets.right) : 0
     }
   }
 
@@ -17,7 +25,8 @@ export default function getWindowOffset () {
   const pages = getCurrentPages()
   if (pages.length) {
     const pageVm = pages[pages.length - 1].$parent.$parent
-    top = pageVm.showNavigationBar && (pageVm.navigationBar.type !== 'transparent' || pageVm.navigationBar.type !== 'float') ? NAVBAR_HEIGHT : 0
+    const navigationBarType = pageVm.navigationBar.type
+    top = navigationBarType === 'default' || navigationBarType === 'float' ? NAVBAR_HEIGHT : 0
   }
   const app = getApp()
   if (app) {
@@ -25,6 +34,8 @@ export default function getWindowOffset () {
   }
   return {
     top,
-    bottom
+    bottom,
+    left: 0,
+    right: 0
   }
 }

@@ -27,6 +27,8 @@ import {
 import createApp from './wrapper/create-app'
 import createPage from './wrapper/create-page'
 import createComponent from './wrapper/create-component'
+import createSubpackageApp from './wrapper/create-subpackage-app'
+import createPlugin from './wrapper/create-plugin'
 
 todos.forEach(todoApi => {
   protocols[todoApi] = false
@@ -45,7 +47,7 @@ let uni = {}
 if (typeof Proxy !== 'undefined' && __PLATFORM__ !== 'app-plus') {
   uni = new Proxy({}, {
     get (target, name) {
-      if (target[name]) {
+      if (hasOwn(target, name)) {
         return target[name]
       }
       if (baseApi[name]) {
@@ -65,9 +67,6 @@ if (typeof Proxy !== 'undefined' && __PLATFORM__ !== 'app-plus') {
       if (eventApi[name]) {
         return eventApi[name]
       }
-      if (!hasOwn(__GLOBAL__, name) && !hasOwn(protocols, name)) {
-        return
-      }
       return promisify(name, wrapper(name, __GLOBAL__[name]))
     },
     set (target, name, value) {
@@ -85,7 +84,7 @@ if (typeof Proxy !== 'undefined' && __PLATFORM__ !== 'app-plus') {
       uni[name] = promisify(name, todoApi[name])
     })
     Object.keys(extraApi).forEach(name => {
-      uni[name] = promisify(name, todoApi[name])
+      uni[name] = promisify(name, extraApi[name])
     })
   }
 
@@ -114,11 +113,15 @@ if (__PLATFORM__ === 'app-plus') {
 __GLOBAL__.createApp = createApp
 __GLOBAL__.createPage = createPage
 __GLOBAL__.createComponent = createComponent
+__GLOBAL__.createSubpackageApp = createSubpackageApp
+__GLOBAL__.createPlugin = createPlugin
 
 export {
   createApp,
   createPage,
-  createComponent
+  createComponent,
+  createSubpackageApp,
+  createPlugin
 }
 
 export default uni

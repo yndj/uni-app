@@ -8,11 +8,14 @@ import {
 
 let audio
 
+let timeUpdateTimer = null
+const TIME_UPDATE = 250
+
 const publishBackgroundAudioStateChange = (state, res = {}) => publish('onBackgroundAudioStateChange', Object.assign({
   state
 }, res))
 
-const events = ['play', 'pause', 'ended', 'stop']
+const events = ['play', 'pause', 'ended', 'stop', 'canplay']
 
 function initMusic () {
   if (audio) {
@@ -29,9 +32,15 @@ function initMusic () {
       // 添加 isStopped 属性是为了解决 安卓设备停止播放后获取播放进度不正确的问题
       if (event === 'play') {
         audio.isStopped = false
+        startTimeUpdateTimer()
       } else if (event === 'stop') {
         audio.isStopped = true
       }
+
+      if (event === 'pause' || event === 'ended' || event === 'stop') {
+        stopTimeUpdateTimer()
+      }
+
       const eventName = `onMusic${event[0].toUpperCase() + event.substr(1)}`
       publish(eventName, {
         dataUrl: audio.src,
@@ -43,11 +52,13 @@ function initMusic () {
     })
   })
   audio.addEventListener('waiting', () => {
+    stopTimeUpdateTimer()
     publishBackgroundAudioStateChange('waiting', {
       dataUrl: audio.src
     })
   })
   audio.addEventListener('error', err => {
+    stopTimeUpdateTimer()
     publish('onMusicError', {
       dataUrl: audio.src,
       errMsg: 'Error:' + err.message
@@ -62,9 +73,30 @@ function initMusic () {
   audio.addEventListener('next', () => publish('onBackgroundAudioNext'))
 }
 
-function setMusicState (args) {
+function startTimeUpdateTimer () {
+  stopTimeUpdateTimer()
+  publishBackgroundAudioStateChange('timeUpdate', {})
+  timeUpdateTimer = setInterval(() => {
+    publishBackgroundAudioStateChange('timeUpdate', {})
+  }, TIME_UPDATE)
+}
+
+function stopTimeUpdateTimer () {
+  if (timeUpdateTimer !== null) {
+    clearInterval(timeUpdateTimer)
+  }
+}
+
+function setMusicState (args, name) {
   initMusic()
   const props = ['src', 'startTime', 'coverImgUrl', 'webUrl', 'singer', 'epname', 'title']
+
+  if (name && name === 'playbackRate') {
+    const val = args[name]
+    audio.playbackRate && audio.playbackRate(parseFloat(val))
+    return
+  }
+
   const style = {}
   Object.keys(args).forEach(key => {
     if (props.indexOf(key) >= 0) {
@@ -89,14 +121,14 @@ export function getMusicPlayerState () {
       dataUrl: audio.src,
       duration: audio.getDuration() || 0,
       currentPosition: audio.getPosition(),
-      status: audio.isPaused ? 0 : 1,
+      status: audio.isPaused() ? 0 : 1,
       downloadPercent: Math.round(100 * audio.getBuffered() / audio.getDuration()),
-      errMsg: `getMusicPlayerState:ok`
+      errMsg: 'getMusicPlayerState:ok'
     }
   }
   return {
     status: 2,
-    errMsg: `getMusicPlayerState:ok`
+    errMsg: 'getMusicPlayerState:ok'
   }
 }
 export function operateMusicPlayer ({
@@ -126,10 +158,10 @@ export function operateMusicPlayer ({
     errMsg: `${api}:ok`
   }
 }
-export function setBackgroundAudioState (args) {
-  setMusicState(args)
+export function setBackgroundAudioState (args, name) {
+  setMusicState(args, name)
   return {
-    errMsg: `setBackgroundAudioState:ok`
+    errMsg: 'setBackgroundAudioState:ok'
   }
 }
 export function operateBackgroundAudio ({
@@ -158,14 +190,14 @@ export function getBackgroundAudioState () {
     coverImgUrl: '',
     webUrl: '',
     startTime: 0,
-    errMsg: `getBackgroundAudioState:ok`
+    errMsg: 'getBackgroundAudioState:ok'
   }
   const audio = getAudio()
   if (audio) {
-    let newData = {
+    const newData = {
       duration: audio.getDuration() || 0,
       currentTime: audio.isStopped ? 0 : audio.getPosition(),
-      paused: audio.isPaused,
+      paused: audio.isPaused(),
       src: audio.src,
       buffered: audio.getBuffered(),
       title: audio.title,

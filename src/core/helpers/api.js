@@ -4,7 +4,6 @@ import {
 } from 'uni-shared'
 
 import {
-  tryCatch,
   tryCatchFramework
 } from './catch'
 
@@ -13,6 +12,9 @@ import {
   isSyncApi,
   isCallbackApi
 } from './promise'
+import {
+  getApiCallbacks
+} from './utils'
 
 import protocol from 'uni-api-protocol'
 
@@ -20,7 +22,9 @@ import validateParam from './params'
 
 function invokeCallbackHandlerFail (err, apiName, callbackId) {
   const errMsg = `${apiName}:fail ${err}`
-  console.error(errMsg)
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(errMsg)
+  }
   if (callbackId === -1) {
     throw new Error(errMsg)
   }
@@ -37,6 +41,23 @@ const callbackApiParamTypes = [{
   type: Function,
   required: true
 }]
+
+// 目前已用到的仅这三个
+// 完整的可能包含：
+// beforeValidate,
+// beforeSuccess,
+// afterSuccess,
+// beforeFail,
+// afterFail,
+// beforeCancel,
+// afterCancel,
+// beforeAll,
+// afterAll
+const IGNORE_KEYS = [
+  'beforeValidate',
+  'beforeAll',
+  'beforeSuccess'
+]
 
 function validateParams (apiName, paramsData, callbackId) {
   let paramTypes = protocol[apiName]
@@ -67,7 +88,7 @@ function validateParams (apiName, paramsData, callbackId) {
 
     const keys = Object.keys(paramTypes)
     for (let i = 0; i < keys.length; i++) {
-      if (keys[i] === 'beforeValidate') {
+      if (IGNORE_KEYS.indexOf(keys[i]) !== -1) {
         continue
       }
       const err = validateParam(keys[i], paramTypes, paramsData)
@@ -87,16 +108,23 @@ function createKeepAliveApiCallback (apiName, callback) {
   const callbackId = invokeCallbackId++
   const invokeCallbackName = 'api.' + apiName + '.' + callbackId
 
-  const invokeCallback = function (res) {
-    callback(res)
-  }
-
   invokeCallbacks[callbackId] = {
     name: invokeCallbackName,
     keepAlive: true,
-    callback: invokeCallback
+    callback
   }
   return callbackId
+}
+
+function getKeepAliveApiCallback (apiName, callback) {
+  for (const key in invokeCallbacks) {
+    const item = invokeCallbacks[key]
+    if (item.name.startsWith('api.' + apiName.replace(/^off/, 'on')) && item.callback === callback) {
+      delete invokeCallbacks[key]
+      return Number(key)
+    }
+  }
+  return 'fail'
 }
 
 function createApiCallback (apiName, params = {}, extras = {}) {
@@ -107,21 +135,12 @@ function createApiCallback (apiName, params = {}, extras = {}) {
   }
   params = Object.assign({}, params)
 
-  const apiCallbacks = {}
-  for (let name in params) {
-    const param = params[name]
-    if (isFn(param)) {
-      apiCallbacks[name] = tryCatch(param)
-      delete params[name]
-    }
-  }
-
   const {
     success,
     fail,
     cancel,
     complete
-  } = apiCallbacks
+  } = getApiCallbacks(params)
 
   const hasSuccess = isFn(success)
   const hasFail = isFn(fail)
@@ -135,11 +154,10 @@ function createApiCallback (apiName, params = {}, extras = {}) {
   }
 
   const wrapperCallbacks = {}
-  for (let name in extras) {
+  for (const name in extras) {
     const extra = extras[name]
     if (isFn(extra)) {
       wrapperCallbacks[name] = tryCatchFramework(extra)
-      delete extras[name]
     }
   }
 
@@ -150,6 +168,7 @@ function createApiCallback (apiName, params = {}, extras = {}) {
     afterFail,
     beforeCancel,
     afterCancel,
+    beforeAll,
     afterAll
   } = wrapperCallbacks
 
@@ -165,13 +184,20 @@ function createApiCallback (apiName, params = {}, extras = {}) {
     } else if (res.errMsg.indexOf(':cancel') !== -1) {
       res.errMsg = apiName + ':cancel'
     } else if (res.errMsg.indexOf(':fail') !== -1) {
-      res.errMsg = apiName + ':fail'
+      let errDetail = ''
+      const spaceIndex = res.errMsg.indexOf(' ')
+      if (spaceIndex > -1) {
+        errDetail = res.errMsg.substr(spaceIndex)
+      }
+      res.errMsg = apiName + ':fail' + errDetail
     }
+
+    isFn(beforeAll) && beforeAll(res)
 
     const errMsg = res.errMsg
 
     if (errMsg.indexOf(apiName + ':ok') === 0) {
-      isFn(beforeSuccess) && beforeSuccess(res)
+      isFn(beforeSuccess) && beforeSuccess(res, params)
 
       hasSuccess && success(res)
 
@@ -228,18 +254,22 @@ function createInvokeCallback (apiName, params = {}, extras = {}) {
     callbackId
   }
 }
-
-export function invokeCallbackHandler (invokeCallbackId, res) {
+// onNativeEventReceive((event,data)=>{}) 需要两个参数，写死最多两个参数，避免改动太大，影响已有逻辑
+export function invokeCallbackHandler (invokeCallbackId, res, extras) {
   if (typeof invokeCallbackId === 'number') {
     const invokeCallback = invokeCallbacks[invokeCallbackId]
     if (invokeCallback) {
       if (!invokeCallback.keepAlive) {
         delete invokeCallbacks[invokeCallbackId]
       }
-      return invokeCallback.callback(res)
+      return invokeCallback.callback(res, extras)
     }
   }
   return res
+}
+
+export function removeCallbackHandler (invokeCallbackId) {
+  delete invokeCallbacks[invokeCallbackId]
 }
 
 export function wrapperUnimplemented (name) {
@@ -248,10 +278,21 @@ export function wrapperUnimplemented (name) {
   }
 }
 
-export function wrapper (name, invokeMethod, extras) {
-  if (!isFn(invokeMethod)) {
+function wrapperExtras (name, extras) {
+  const protocolOptions = protocol[name]
+  if (protocolOptions) {
+    isFn(protocolOptions.beforeAll) && (extras.beforeAll = protocolOptions.beforeAll)
+    isFn(protocolOptions.beforeSuccess) && (extras.beforeSuccess = protocolOptions.beforeSuccess)
+  }
+}
+// 部分 API 直接实现
+const unwrappers = ['getPushClientId', 'onPushMessage', 'offPushMessage']
+
+export function wrapper (name, invokeMethod, extras = {}) {
+  if (unwrappers.indexOf(name) > -1 || !isFn(invokeMethod)) {
     return invokeMethod
   }
+  wrapperExtras(name, extras)
   return function (...args) {
     if (isSyncApi(name)) {
       if (validateParams(name, args, -1)) {
@@ -259,7 +300,8 @@ export function wrapper (name, invokeMethod, extras) {
       }
     } else if (isCallbackApi(name)) {
       if (validateParams(name, args, -1)) {
-        return invokeMethod(createKeepAliveApiCallback(name, args[0]))
+        return invokeMethod((name.startsWith('off') ? getKeepAliveApiCallback : createKeepAliveApiCallback)(name,
+          args[0]))
       }
     } else {
       let argsObj = {}

@@ -2,11 +2,13 @@ import {
   setProperties
 } from 'uni-shared'
 
-const setTabBarItemProps = ['text', 'iconPath', 'selectedIconPath']
+const setTabBarItemProps = ['text', 'iconPath', 'iconfont', 'selectedIconPath', 'visible']
 
-const setTabBarStyleProps = ['color', 'selectedColor', 'backgroundColor', 'borderStyle']
+const setTabBarStyleProps = ['color', 'selectedColor', 'backgroundColor', 'borderStyle', 'midButton']
 
 const setTabBarBadgeProps = ['badge', 'redDot']
+
+const setTabBarIconfontStyles = ['text', 'selectedText', 'fontSize', 'color', 'selectedColor']
 
 function setTabBar (type, args = {}) {
   const app = getApp()
@@ -30,7 +32,7 @@ function setTabBar (type, args = {}) {
     const {
       index
     } = args
-    const tabBar = app.$children[0].tabBar
+    const tabBar = __uniConfig.tabBar
     if (index >= __uniConfig.tabBar.list.length) {
       return {
         errMsg: `${type}:fail tabbar item not found`
@@ -43,9 +45,28 @@ function setTabBar (type, args = {}) {
       case 'hideTabBar':
         app.$children[0].hideTabBar = true
         break
-      case 'setTabBarItem':
+      case 'setTabBarItem': {
+        if (args.iconfont) {
+          setProperties(tabBar.list[index].iconfont, setTabBarIconfontStyles, args.iconfont)
+          args.iconfont = tabBar.list[index].iconfont
+        }
         setProperties(tabBar.list[index], setTabBarItemProps, args)
+        const pagePath = args.pagePath
+        const route = pagePath && __uniRoutes.find(({ path }) => path === pagePath)
+        if (route) {
+          const meta = route.meta
+          meta.isTabBar = true
+          meta.tabBarIndex = index
+          meta.isQuit = true
+          meta.isSet = true
+          meta.id = index + 1
+          const tabBar = __uniConfig.tabBar
+          if (tabBar && tabBar.list && tabBar.list[index]) {
+            tabBar.list[index].pagePath = pagePath.startsWith('/') ? pagePath.substring(1) : pagePath
+          }
+        }
         break
+      }
       case 'setTabBarStyle':
         setProperties(tabBar, setTabBarStyleProps, args)
         break

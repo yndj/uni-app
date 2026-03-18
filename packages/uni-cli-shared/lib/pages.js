@@ -1,9 +1,13 @@
 const fs = require('fs')
 const path = require('path')
+const uniI18n = require('@dcloudio/uni-cli-i18n')
 
 const {
   removeExt,
-  normalizePath
+  normalizePath,
+  camelize,
+  capitalize,
+  isNormalPage
 } = require('./util')
 
 const {
@@ -60,11 +64,16 @@ function processPagesJson (pagesJson, loader = {
     if (typeof pagesJsonJsFn === 'function') {
       pagesJson = pagesJsonJsFn(pagesJson, loader)
       if (!pagesJson) {
-        console.error(`${pagesJsonJsFileName}  必须返回一个 json 对象`)
+        console.error(`${pagesJsonJsFileName}  ${uniI18n.__('cliShared.requireReturnJsonObject')}`)
       }
     } else {
-      console.error(`${pagesJsonJsFileName} 必须导出 function`)
+      console.error(`${pagesJsonJsFileName} ${uniI18n.__('cliShared.requireExportFunction')}`)
     }
+  }
+  // 将 subpackages 转换成 subPackages
+  if (pagesJson.subpackages && !pagesJson.subPackages) {
+    pagesJson.subPackages = pagesJson.subpackages
+    delete pagesJson.subpackages
   }
 
   let uniNVueEntryPagePath
@@ -104,14 +113,24 @@ function isNVuePage (page, root = '') {
 }
 
 function isValidPage (page, root = '') {
-  if (typeof page === 'string') { // 不合法的配置
-    console.warn(`${page} 配置错误, 已被忽略, 查看文档: https://uniapp.dcloud.io/collocation/pages?id=pages`)
+  if (typeof page === 'string' || !page.path) { // 不合法的配置
+    console.warn(uniI18n.__('cliShared.pagesJsonError', {
+      0: 'https://uniapp.dcloud.io/collocation/pages?id=pages'
+    }))
     return false
   }
   let pagePath = page.path
 
   if (pagePath.indexOf('platforms') === 0) { // 平台相关
-    if (pagePath.indexOf('platforms/' + process.env.UNI_PLATFORM) === -1) { // 非本平台
+    if (process.env.UNI_PLATFORM === 'h5' || process.env.UNI_PLATFORM === 'web') {
+      if (!(pagePath.indexOf('platforms/h5/') === 0 || pagePath.indexOf('platforms/web/') === 0)) {
+        return false
+      }
+    } else if (process.env.UNI_PLATFORM === 'app-plus' || process.env.UNI_PLATFORM === 'app') {
+      if (!(pagePath.indexOf('platforms/app-plus/') === 0 || pagePath.indexOf('platforms/app/') === 0)) {
+        return false
+      }
+    } else if (pagePath.indexOf('platforms/' + process.env.UNI_PLATFORM) === -1) { // 非本平台
       return false
     }
   }
@@ -120,21 +139,14 @@ function isValidPage (page, root = '') {
     process.env.UNI_PLATFORM === 'app-plus' &&
     page.style
   ) {
-    const subNVues = page.style.subNVues || (page.style['app-plus'] && page.style['app-plus']['subNVues'])
+    const subNVues = page.style.subNVues || (page.style['app-plus'] && page.style['app-plus'].subNVues)
     if (Array.isArray(subNVues)) {
       subNVues.forEach(subNVue => {
         let subNVuePath = subNVue.path
         if (subNVuePath) {
           subNVuePath = subNVue.path.split('?')[0]
           const subNVuePagePath = removeExt(path.join(root, subNVuePath))
-
-          // if (process.env.UNI_USING_NVUE_COMPILER) {
           process.UNI_NVUE_ENTRY[subNVuePagePath] = getNVueMainJsPath(subNVuePagePath)
-          // } else {
-          //   process.UNI_NVUE_ENTRY[subNVuePagePath] = path.resolve(process.env.UNI_INPUT_DIR,
-          //     subNVuePagePath +
-          //                   '.nvue') + '?entry'
-          // }
         }
       })
     }
@@ -146,17 +158,18 @@ function isValidPage (page, root = '') {
     // 存储 nvue 相关信息
     pagePath = normalizePath(path.join(root, pagePath))
 
-    // if (process.env.UNI_USING_NVUE_COMPILER) {
     process.UNI_NVUE_ENTRY[pagePath] = getNVueMainJsPath(pagePath)
-    // } else {
-    //   process.UNI_NVUE_ENTRY[pagePath] = path.resolve(process.env.UNI_INPUT_DIR, pagePath + '.nvue') + '?entry'
-    // }
 
-    uniNVuePages.push({
-      'path': pagePath + '.html',
-      'style': page.style || {}
-    })
-    return false
+    if (process.env.UNI_USING_V3 || process.env.UNI_USING_V3_NATIVE) { // 不移除
+      page.nvue = true
+      return true
+    } else {
+      uniNVuePages.push({
+        path: pagePath + '.html',
+        style: page.style || {}
+      })
+      return false
+    }
   }
 
   return true
@@ -203,15 +216,31 @@ function parsePages (pagesJson, pageCallback, subPageCallback) {
 }
 
 function parseEntry (pagesJson) {
+  const mainJsPath = path.resolve(process.env.UNI_INPUT_DIR, getMainEntry())
   process.UNI_ENTRY = {
-    'common/main': path.resolve(process.env.UNI_INPUT_DIR, getMainEntry())
+    'common/main': mainJsPath
+  }
+  const manifestConfig = process.UNI_MANIFEST
+  const weixinConfig = manifestConfig['mp-weixin'] || {}
+  const independentSwitch = !!weixinConfig.independent
+  if (independentSwitch) {
+    Object.values(process.UNI_SUBPACKAGES).forEach(({
+      root,
+      independent = false
+    }) => {
+      if (root && independent) {
+        const pkgRootMainJsKey = `${root}/common/main`
+        // const pkgRootMainJsPath = `${process.env.UNI_INPUT_DIR}/${root}/main.js`;
+        process.UNI_ENTRY[pkgRootMainJsKey] = mainJsPath
+      }
+    })
   }
 
   process.UNI_SUB_PACKAGES_ROOT = {}
 
   process.UNI_NVUE_ENTRY = {}
 
-  if (process.env.UNI_USING_NATIVE) {
+  if (process.env.UNI_USING_NATIVE || process.env.UNI_USING_V3_NATIVE) {
     process.UNI_NVUE_ENTRY['app-config'] = path.resolve(process.env.UNI_INPUT_DIR, 'pages.json')
     process.UNI_NVUE_ENTRY['app-service'] = path.resolve(process.env.UNI_INPUT_DIR, getMainEntry())
   }
@@ -224,7 +253,9 @@ function parseEntry (pagesJson) {
 
   // pages
   pagesJson.pages.forEach(page => {
-    process.UNI_ENTRY[page.path] = getMainJsPath(page.path)
+    if (isNormalPage(page.path)) {
+      process.UNI_ENTRY[page.path] = getMainJsPath(page.path)
+    }
   })
   // subPackages
   if (Array.isArray(pagesJson.subPackages) && pagesJson.subPackages.length) {
@@ -243,12 +274,325 @@ function parseEntry (pagesJson) {
   }
 }
 
+function parseUsingComponents (usingComponents = {}) {
+  const components = []
+  Object.keys(usingComponents).forEach(name => {
+    const identifier = capitalize(camelize(name))
+    let source = usingComponents[name]
+    if (source.indexOf('/') === 0) { // 绝对路径
+      source = '@' + source
+    } else if (source.indexOf('.') !== 0) { // 相对路径
+      source = './' + source
+    }
+    components.push({
+      name,
+      identifier,
+      source
+    })
+  })
+  return components
+}
+
+function generateUsingComponentsCode (usingComponents) {
+  const components = parseUsingComponents(usingComponents)
+  const importCode = []
+  const componentsCode = []
+  components.forEach(({
+    name,
+    identifier,
+    source
+  }) => {
+    importCode.push(`import ${identifier} from '${source}.vue'`)
+    componentsCode.push(`'${name}':${identifier}`)
+  })
+  if (!importCode.length) {
+    return ''
+  }
+  return `;${importCode.join(';')};exports.default.components=Object.assign({${componentsCode.join(',')}},exports.default.components||{});`
+}
+
+function generateGlobalUsingComponentsCode (usingComponents) {
+  const components = parseUsingComponents(usingComponents)
+  const importCode = []
+  const componentsCode = []
+  components.forEach(({
+    name,
+    identifier,
+    source
+  }) => {
+    importCode.push(`import ${identifier} from '${source}.vue'`)
+    componentsCode.push(`Vue.component('${name}',${identifier})`)
+  })
+  if (!importCode.length) {
+    return ''
+  }
+  return `${importCode.join(';')};${componentsCode.join(';')};`
+}
+
+function getSubpackageRoots () {
+  const pagesJson = getPagesJson()
+  if (Array.isArray(pagesJson.subPackages) && pagesJson.subPackages.length) {
+    return pagesJson.subPackages.map(({ root }) => root).filter(Boolean)
+  }
+  return []
+}
+
+function getGlobalUsingComponentsCode () {
+  const pagesJson = getPagesJson()
+  const usingComponents = pagesJson.globalStyle && pagesJson.globalStyle.usingComponents
+  if (!usingComponents) {
+    return ''
+  }
+  return generateGlobalUsingComponentsCode(usingComponents)
+}
+
+function getUsingComponentsCode (pagePath) {
+  const usingComponents = usingComponentsPages[pagePath]
+  if (!usingComponents) {
+    return ''
+  }
+  return generateUsingComponentsCode(usingComponents)
+}
+
+const usingComponentsPages = Object.create(null)
+
+function addPageUsingComponents (pagePath, usingComponents) {
+  if (usingComponents && Object.keys(usingComponents).length) {
+    usingComponentsPages[pagePath] = usingComponents
+  }
+}
+// 存储自动组件
+const autoComponentMap = {}
+
+let lastUsingAutoImportComponentsJson = ''
+
+let uniAutoImportComponents = []
+
+let uniAutoImportScanComponents = []
+
+let uniQuickAppAutoImportScanComponents = false
+
+const isDirectory = source => fs.lstatSync(source).isDirectory()
+
+function getAutoComponentsByDir (componentsPath, absolute = false) {
+  const components = {}
+  try {
+    if (fs.existsSync(componentsPath)) {
+      let importComponentsDir = '@/components'
+      const uniModulesDir = path.resolve(process.env.UNI_INPUT_DIR, 'uni_modules')
+      if (!absolute && componentsPath.includes(uniModulesDir)) {
+        importComponentsDir = `@/uni_modules/${path.basename(path.dirname(componentsPath))}/components`
+      }
+      fs.readdirSync(componentsPath).forEach(name => {
+        const folder = path.resolve(componentsPath, name)
+        if (!isDirectory(folder)) {
+          return
+        }
+        const importDir = absolute ? normalizePath(folder) : `${importComponentsDir}/${name}`
+        // 读取文件夹文件列表，比对文件名（fs.existsSync在大小写不敏感的系统会匹配不准确）
+        const files = fs.readdirSync(folder)
+        if (files.includes(name + '.vue')) {
+          components[`^${name}$`] = `${importDir}/${name}.vue`
+        } else if (files.includes(name + '.nvue')) {
+          components[`^${name}$`] = `${importDir}/${name}.nvue`
+        }
+      })
+    }
+  } catch (e) {
+    console.log(e)
+  }
+  return components
+}
+
+function initAutoComponents () {
+  const allComponents = {}
+  const componentsDirs = [path.resolve(process.env.UNI_INPUT_DIR, 'components')]
+  global.uniModules.forEach(module => {
+    componentsDirs.push(path.resolve(process.env.UNI_INPUT_DIR, 'uni_modules', module, 'components'))
+  })
+  componentsDirs.forEach((componentsDir) => {
+    // 根目录 components 使用相对路径，uni_modules 使用绝对路径
+    const currentComponents = getAutoComponentsByDir(componentsDir, false)
+    Object.keys(currentComponents).forEach(name => {
+      (allComponents[name] || (allComponents[name] = [])).push(currentComponents[name])
+    })
+  })
+  const components = {}
+  const conflictFiles = []
+  Object.keys(allComponents).forEach(name => {
+    const files = allComponents[name]
+    components[name] = files[0]
+    if (files.length > 1) {
+      conflictFiles.push(files)
+    }
+  })
+  if (conflictFiles.length > 0) {
+    conflictFiles.forEach(files => {
+      console.warn(uniI18n.__('cliShared.easycomConflict', {
+        0: '[' + files.map((file, index) => {
+          return file
+        }).join(',') + ']'
+      }))
+      console.log('\n')
+    })
+  }
+  return components
+}
+
+function initAutoImportScanComponents () {
+  const components = initAutoComponents()
+
+  const {
+    initUTSComponents
+  } = require('./uts/uts.js')
+
+  initUTSComponents(process.env.UNI_INPUT_DIR, process.env.UNI_PLATFORM).forEach((item) => {
+    components[item.pattern.source] = item.replacement.replace('\0', '').replace('?uts-proxy',
+      '/package.json?uts-proxy')
+  })
+
+  if (process.env.UNI_PLATFORM === 'quickapp-native') {
+    if (!uniQuickAppAutoImportScanComponents) {
+      uniQuickAppAutoImportScanComponents = getAutoComponentsByDir(
+        path.resolve(require.resolve('@dcloudio/uni-quickapp-native'), '../../components'),
+        true
+      )
+    }
+    // 平台内置组件优先级高
+    Object.assign(components, uniQuickAppAutoImportScanComponents)
+  }
+
+  uniAutoImportScanComponents = parseUsingAutoImportComponents(components)
+  refreshAutoComponentMap()
+}
+
+const _toString = Object.prototype.toString
+
+function isPlainObject (obj) {
+  return _toString.call(obj) === '[object Object]'
+}
+
+function initBuiltInEasycom (components, usingAutoImportComponents) {
+  components.forEach(name => {
+    const easycomName = `^${name}$`
+    if (!usingAutoImportComponents[easycomName]) {
+      usingAutoImportComponents[easycomName] =
+        '@dcloudio/uni-cli-shared/components/' + name + '.vue'
+    }
+  })
+}
+
+function initAutoImportComponents (easycom = {}) {
+  let usingAutoImportComponents = easycom.custom || easycom || {}
+  if (!isPlainObject(usingAutoImportComponents)) {
+    usingAutoImportComponents = {}
+  }
+  initBuiltInEasycom(BUILT_IN_EASYCOMS, usingAutoImportComponents)
+  // 目前仅 mp-weixin 内置支持 page-meta 等组件
+  if (process.env.UNI_PLATFORM === 'mp-weixin') {} else if (process.env.UNI_PLATFORM === 'mp-alipay') {
+    initBuiltInEasycom(BUILT_IN_COMPONENTS_ALIPAY, usingAutoImportComponents)
+  } else {
+    initBuiltInEasycom(BUILT_IN_COMPONENTS, usingAutoImportComponents)
+  }
+
+  const newUsingAutoImportComponentsJson = JSON.stringify(usingAutoImportComponents)
+  if (newUsingAutoImportComponentsJson !== lastUsingAutoImportComponentsJson) {
+    lastUsingAutoImportComponentsJson = newUsingAutoImportComponentsJson
+    uniAutoImportComponents = parseUsingAutoImportComponents(usingAutoImportComponents)
+    refreshAutoComponentMap()
+  }
+}
+
+/**
+ * UNI_AUTO_COMPONENTS 被更新,重新刷新 map
+ */
+function refreshAutoComponentMap () {
+  Object.keys(autoComponentMap).forEach(name => {
+    addAutoComponent(name)
+  })
+}
+
+function addAutoComponent (name) {
+  let opt = uniAutoImportComponents.find(opt => opt.pattern.test(name))
+  if (!opt) {
+    opt = uniAutoImportScanComponents.find(opt => opt.pattern.test(name))
+  }
+  if (!opt) { // 不匹配
+    return (autoComponentMap[name] = true) // cache
+  }
+  return (autoComponentMap[name] = {
+    name,
+    identifier: capitalize(camelize(name + '-auto-import')),
+    source: name.replace(opt.pattern, opt.replacement)
+  })
+}
+
+function getAutoComponents (autoComponents) {
+  const components = []
+  autoComponents.forEach(name => {
+    let autoComponent = autoComponentMap[name]
+    if (!autoComponent) {
+      autoComponent = addAutoComponent(name)
+    }
+    if (autoComponent !== true) {
+      components.push(autoComponent)
+    }
+  })
+  return components
+}
+
+function parseUsingAutoImportComponents (usingAutoImportComponents) {
+  const autoImportComponents = []
+  if (usingAutoImportComponents) {
+    Object.keys(usingAutoImportComponents).forEach(pattern => {
+      const replacement = usingAutoImportComponents[pattern]
+      if (replacement && typeof replacement === 'string') {
+        autoImportComponents.push({
+          pattern: new RegExp(pattern),
+          replacement: replacement
+        })
+      }
+    })
+  }
+  return autoImportComponents
+}
+
+const BUILT_IN_COMPONENTS = ['page-meta', 'navigation-bar', 'uni-match-media']
+const BUILT_IN_COMPONENTS_ALIPAY = ['navigation-bar']
+
+const BUILT_IN_EASYCOMS = ['unicloud-db', 'uniad', 'ad-rewarded-video', 'ad-fullscreen-video', 'ad-interstitial',
+  'ad-interactive'
+]
+
+function isBuiltInComponent (name) { // uni-template-compiler/lib/util.js 识别微信内置组件
+  return BUILT_IN_COMPONENTS.includes(name)
+}
+
+function isBuiltInComponentPath (modulePath) { // 内置的 easycom 类组件
+  if (BUILT_IN_EASYCOMS.find(name => modulePath.includes(name))) {
+    return true
+  }
+  return !!BUILT_IN_COMPONENTS.find(name => modulePath.includes(name))
+}
+
 module.exports = {
+  isBuiltInComponent,
+  isBuiltInComponentPath,
   getMainEntry,
   getNVueMainEntry,
   parsePages,
   parseEntry,
   getPagesJson,
+  getSubpackageRoots,
   parsePagesJson,
-  pagesJsonJsFileName
+  pagesJsonJsFileName,
+  getAutoComponents,
+  initAutoImportComponents,
+  initAutoImportScanComponents,
+  addPageUsingComponents,
+  getUsingComponentsCode,
+  generateUsingComponentsCode,
+  getGlobalUsingComponentsCode,
+  parseUsingAutoImportComponents,
+  generateGlobalUsingComponentsCode
 }

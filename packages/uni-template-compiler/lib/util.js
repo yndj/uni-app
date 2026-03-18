@@ -1,9 +1,13 @@
 const t = require('@babel/types')
 const babelTraverse = require('@babel/traverse').default
 const babelGenerate = require('@babel/generator').default
+const babelTemplate = require('@babel/template').default
+const uniI18n = require('@dcloudio/uni-cli-i18n')
 
 const {
-  METHOD_RENDER_LIST
+  METHOD_RENDER_LIST,
+  METHOD_RESOLVE_SCOPED_SLOTS,
+  METHOD_CREATE_ELEMENT
 } = require('./constants')
 
 function cached (fn) {
@@ -47,6 +51,8 @@ function traverseKey (ast, state) {
     CallExpression (path) {
       if (path.node.callee.name === METHOD_RENDER_LIST) {
         path.stop()
+      } else if (path.node.callee.name === METHOD_RESOLVE_SCOPED_SLOTS) {
+        path.skip()
       }
     }
   })
@@ -106,6 +112,7 @@ function getForKey (forKey, forIndex, state) {
   if (forKey) {
     if (t.isIdentifier(forKey)) {
       if (forIndex !== forKey.name) { // 非 forIndex
+        if (state.options.platform.name === 'mp-baidu') return getCode(forKey)
         return '*this'
       } else {
         // TODO
@@ -113,9 +120,10 @@ function getForKey (forKey, forIndex, state) {
         return forKey.name
       }
     } else if (t.isMemberExpression(forKey)) {
+      if (state.options.platform.name === 'mp-baidu') return getCode(forKey)
       return forKey.property.name || forKey.property.value
     } else {
-      state.tips.add(`非 h5 平台 :key 不支持表达式 ${getCode(forKey)},详情参考:https://uniapp.dcloud.io/use?id=key`)
+      state.tips.add(uniI18n.__('templateCompiler.noH5KeyNoSupportExpression', { 0: getCode(forKey), 1: 'https://uniapp.dcloud.io/use?id=key' }))
     }
   }
   return ''
@@ -127,16 +135,44 @@ function processMemberProperty (node, state) {
     if (t.isNumericLiteral(property)) {
       node.property = t.identifier('__$n' + property.value)
     } else if (!t.isStringLiteral(property)) {
-      if (!state.options.hasOwnProperty('__m__')) {
+      if (!hasOwn(state.options, '__m__')) {
         state.options.__m__ = 0
         state.options.replaceCodes = {}
       }
       const identifier = '__$m' + (state.options.__m__++) + '__'
-      state.options.replaceCodes[identifier] = `'+${genCode(property, true)}+'`
+      const code = { property }
+      code.toString = function () {
+        return `'+${genCode(this.property, true)}+'`
+      }
+      state.options.replaceCodes[identifier] = code
+      if (state.computedProperty) {
+        state.computedProperty[identifier] = property
+      }
       node.property = t.identifier(identifier)
     }
     node.computed = false
   }
+}
+
+function replaceMemberExpression (stringLiteral, state) {
+  let code = `'${stringLiteral.value}'`
+  const replaceCodes = state.options.replaceCodes
+  if (replaceCodes) {
+    const options = {}
+    Object.keys(replaceCodes).forEach(key => {
+      const newCode = code.replace(new RegExp(key.replace('$', '\\$'), 'g'), `'+%%${key}%%+'`)
+      if (newCode !== code) {
+        options[key] = replaceCodes[key].property
+        code = newCode
+      }
+    })
+    const buildRequire = babelTemplate(code, { syntacticPlaceholders: true })
+    if (Object.keys(options).length) {
+      const ast = buildRequire(options)
+      return ast.expression
+    }
+  }
+  return stringLiteral
 }
 
 function processMemberExpression (element, state) {
@@ -172,7 +208,163 @@ function processMemberExpression (element, state) {
   return element
 }
 
+function hasOwn (obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+const tags = require('@dcloudio/uni-cli-shared/lib/tags')
+
+const {
+  isBuiltInComponent
+} = require('@dcloudio/uni-cli-shared/lib/pages')
+
+const {
+  getTagName
+} = require('./h5')
+
+/**
+ * isComponent
+ * @param {string} tagName
+ * @param {string} [platform]
+ * @returns {boolean}
+ */
+function isComponent (tagName, platform) {
+  if (
+    tagName === 'block' ||
+    tagName === 'component' ||
+    tagName === 'template' ||
+    tagName === 'keep-alive'
+  ) {
+    return false
+  }
+  // mp-weixin 底层支持 page-meta,navigation-bar
+  if (process.env.UNI_PLATFORM === 'mp-weixin') {
+    if (isBuiltInComponent(tagName)) {
+      return false
+    }
+  }
+  return !hasOwn(tags, getTagName(tagName.replace(/^v-uni-/, ''), platform))
+}
+
+function makeMap (str, expectsLowerCase) {
+  const map = Object.create(null)
+  const list = str.split(',')
+  for (let i = 0; i < list.length; i++) {
+    map[list[i]] = true
+  }
+  return expectsLowerCase
+    ? val => map[val.toLowerCase()]
+    : val => map[val]
+}
+
+/**
+ * 微信、QQ小程序模板支持的简单类型
+ * @param {*} node
+ */
+function isSimpleObjectExpression (node) {
+  return t.isObjectExpression(node) && node.properties.length && !node.properties.find(({
+    key,
+    value
+  }) => !t.isIdentifier(key) || !(t.isIdentifier(value) || t.isStringLiteral(value) || t.isBooleanLiteral(value) ||
+    t.isNumericLiteral(value) || t.isNullLiteral(value)))
+}
+/**
+ * 是否包含转义引号
+ * @param {*} path
+ * @returns {boolean}
+ */
+function hasEscapeQuote (path) {
+  let has = false
+  function hasEscapeQuote (node) {
+    const quote = node.extra ? node.extra.raw[0] : '"'
+    if (node.value.includes(quote)) {
+      return true
+    }
+  }
+  if (path.isStringLiteral()) {
+    return hasEscapeQuote(path.node)
+  } else {
+    path.traverse({
+      noScope: true,
+      StringLiteral (path) {
+        if (hasEscapeQuote(path.node)) {
+          has = true
+          path.stop()
+        }
+      },
+      TemplateElement (path) {
+        if (path.node.value.cooked.includes('\'')) {
+          has = true
+          path.stop()
+        }
+      }
+    })
+  }
+  return has
+}
+/**
+ * 是否包含属性 length 访问
+ * @param {*} path
+ * @returns {boolean}
+ */
+function hasLengthProperty (path) {
+  let has = false
+  function hasLengthProperty (node) {
+    const property = node.property
+    // 暂不考虑动态拼接和模板字符串
+    return t.isIdentifier(property, { name: 'length' }) || t.isStringLiteral(property, { value: 'length' })
+  }
+  if (path.isMemberExpression()) {
+    return hasLengthProperty(path.node)
+  } else {
+    path.traverse({
+      noScope: true,
+      MemberExpression (path) {
+        if (hasLengthProperty(path.node)) {
+          has = true
+          path.stop()
+        }
+      }
+    })
+  }
+  return has
+}
+
+function isRootElement (path) {
+  const result = path.findParent(path => (path.isCallExpression() && path.get('callee').isIdentifier({ name: METHOD_CREATE_ELEMENT })) || path.isReturnStatement())
+  return result.isReturnStatement()
+}
+
+function isVForElement (path) {
+  return path.findParent(path => path.isCallExpression() && path.get('callee').isIdentifier({ name: METHOD_RENDER_LIST }))
+}
+
+/**
+ * 事件绑定是否存在成员表达式 => obj.click2()
+ * @param {*} path
+ * @returns {boolean}
+*/
+const hasMemberExpression = (funcPath) => {
+  let result = false
+
+  funcPath.get('body').traverse({
+    CallExpression (path) {
+      if (t.isMemberExpression(path.node.callee)) {
+        result = true
+        path.stop()
+      }
+    }
+  })
+  return result
+}
+
 module.exports = {
+  hasOwn,
+  isUnaryTag: makeMap(
+    'image,area,base,br,col,embed,frame,hr,img,input,isindex,keygen,' +
+    'link,meta,param,source,track,wbr'
+  ),
+  isComponent,
   genCode,
   getCode,
   camelize,
@@ -195,5 +387,12 @@ module.exports = {
     return str
   }),
   processMemberExpression,
-  getForIndexIdentifier
+  replaceMemberExpression,
+  getForIndexIdentifier,
+  isSimpleObjectExpression,
+  hasEscapeQuote,
+  hasLengthProperty,
+  isRootElement,
+  isVForElement,
+  hasMemberExpression
 }

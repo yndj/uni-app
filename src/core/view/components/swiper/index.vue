@@ -1,6 +1,6 @@
-
 <script>
 import touchtrack from 'uni-mixins/touchtrack'
+import { deepClone } from 'uni-shared'
 
 export default {
   name: 'Swiper',
@@ -61,6 +61,22 @@ export default {
     displayMultipleItems: {
       type: [Number, String],
       default: 1
+    },
+    disableTouch: {
+      type: [Boolean, String],
+      default: false
+    },
+    navigation: {
+      type: [Boolean, String],
+      default: false
+    },
+    navigationColor: {
+      type: String,
+      default: '#fff'
+    },
+    navigationActiveColor: {
+      type: String,
+      default: 'rgba(53, 53, 53, 0.6)'
     }
   },
   data () {
@@ -69,7 +85,12 @@ export default {
       currentItemIdSync: this.currentItemId || '',
       userTracking: false,
       currentChangeSource: '',
-      items: []
+      items: [],
+
+      isNavigationAuto: false,
+      hideNavigation: false,
+      prevDisabled: false,
+      nextDisabled: false
     }
   },
   computed: {
@@ -109,8 +130,11 @@ export default {
         height: !this.vertical ? '100%' : value
       }
     },
+    swiperEnabled () {
+      return this.items.length > this.displayMultipleItemsNumber
+    },
     circularEnabled () {
-      return this.circular && this.items.length > this.displayMultipleItemsNumber
+      return this.circular && this.swiperEnabled
     }
   },
   watch: {
@@ -129,9 +153,10 @@ export default {
     current (val) {
       this._currentCheck()
     },
-    currentSync (val) {
-      this._currentChanged(val)
+    currentSync (val, oldVal) {
+      this._currentChanged(val, oldVal)
       this.$emit('update:current', val)
+      this._setNavigationState()
     },
     currentItemId (val) {
       this._currentCheck()
@@ -141,6 +166,24 @@ export default {
     },
     displayMultipleItemsNumber () {
       this._resetLayout()
+    },
+    navigation: {
+      immediate: true,
+      handler (val) {
+        this.isNavigationAuto = val === 'auto'
+        this.hideNavigation = val !== true || this.isNavigationAuto
+        this._navigationSwiperAddMouseEvent()
+      }
+    },
+    items () {
+      this._setNavigationState()
+    },
+    swiperEnabled (val) {
+      if (!val) {
+        this.prevDisabled = true
+        this.nextDisabled = true
+        this.isNavigationAuto && (this.hideNavigation = true)
+      }
     }
   },
   created () {
@@ -163,9 +206,11 @@ export default {
     }, this._inintAutoplay)
     this._inintAutoplay(this.autoplay && !this.userTracking)
     this.$watch('items.length', this._resetLayout)
+    this._navigationSwiperAddMouseEvent()
   },
   beforeDestroy () {
     this._cancelSchedule()
+    cancelAnimationFrame(this._animationFrame)
   },
   methods: {
     _inintAutoplay (enable) {
@@ -182,7 +227,7 @@ export default {
       var current = -1
       if (this.currentItemId) {
         for (let i = 0, items = this.items; i < items.length; i++) {
-          let componentInstance = items[i].componentInstance
+          const componentInstance = items[i].componentInstance
           if (componentInstance && componentInstance.itemId === this.currentItemId) {
             current = i
             break
@@ -209,11 +254,12 @@ export default {
     /**
      * 当前页面变更
      */
-    _currentChanged (current) {
+    _currentChanged (current, history) {
       var source = this.currentChangeSource
       this.currentChangeSource = ''
       if (!source) {
-        this._animateViewport(current, '', 0)
+        const length = this.items.length
+        this._animateViewport(current, '', this.circularEnabled && history + (length - current) % length > length / 2 ? 1 : 0)
       }
       var item = this.items[current]
       if (item) {
@@ -421,7 +467,7 @@ export default {
       var s = acc * time * time / 2
       var l = toPos + s
       this._updateViewport(l)
-      requestAnimationFrame(this._animateFrameFuncProto.bind(this))
+      this._animationFrame = requestAnimationFrame(this._animateFrameFuncProto.bind(this))
     },
     _animateViewport (current, source, n) {
       this._cancelViewportAnimation()
@@ -443,6 +489,9 @@ export default {
           for (; position + length < current;) {
             position += length
           }
+          if (position + length - current < current - position) {
+            position += length
+          }
         } else {
           for (; position + length < current;) {
             position += length
@@ -454,6 +503,8 @@ export default {
             position += length
           }
         }
+      } else if (source === 'click') {
+        current = current + this.displayMultipleItemsNumber - 1 < length ? current : 0
       }
 
       this._animating = {
@@ -464,7 +515,7 @@ export default {
       }
       if (!this._requestedAnimation) {
         this._requestedAnimation = true
-        requestAnimationFrame(this._animateFrameFuncProto.bind(this))
+        this._animationFrame = requestAnimationFrame(this._animateFrameFuncProto.bind(this))
       }
     },
     _cancelViewportAnimation () {
@@ -537,6 +588,9 @@ export default {
       }
     },
     _handleContentTrack (e) {
+      if (this.disableTouch || !this.items.length) {
+        return
+      }
       if (!this._invalid) {
         if (e.detail.state === 'start') {
           this.userTracking = true
@@ -573,27 +627,127 @@ export default {
           return false
         }
       }
+    },
+    /**
+     * navigation
+     */
+    _onSwiperDotClick (index) {
+      this._animateViewport(
+        (this.currentSync = index),
+        (this.currentChangeSource = 'click'),
+        this.circularEnabled ? 1 : 0
+      )
+    },
+    _navigationClick ($event, type, disabled) {
+      $event.stopPropagation()
+
+      if (disabled) return
+
+      const swiperItemLength = this.items.length
+      let _current = this.currentSync
+
+      switch (type) {
+        case 'prev':
+          _current--
+          if (_current < 0 && this.circularEnabled) {
+            _current = swiperItemLength - 1
+          }
+          break
+        case 'next':
+          _current++
+          if (_current >= swiperItemLength && this.circularEnabled) {
+            _current = 0
+          }
+          break
+      }
+
+      this._onSwiperDotClick(_current)
+    },
+    _navigationMouseMove (e) {
+      clearTimeout(this.hideNavigationTimer)
+
+      const { clientX, clientY } = e
+      const {
+        left,
+        right,
+        top,
+        bottom,
+        width,
+        height
+      } = this.$refs.slidesWrapper.getBoundingClientRect()
+
+      let hide = false
+      if (this.vertical) {
+        hide = !(clientY - top < height / 3 || bottom - clientY < height / 3)
+      } else {
+        hide = !(clientX - left < width / 3 || right - clientX < width / 3)
+      }
+
+      if (hide) {
+        this.hideNavigationTimer = setTimeout(() => {
+          this.hideNavigation = hide
+        }, 300)
+        return
+      }
+
+      this.hideNavigation = hide
+    },
+    _navigationMouseOut () {
+      this.hideNavigation = true
+    },
+    _navigationSwiperAddMouseEvent () {
+      if (__PLATFORM__ === 'h5') {
+        const rootRef = this.$refs.slidesWrapper
+        if (rootRef) {
+          rootRef.removeEventListener('mousemove', this._navigationMouseMove)
+          rootRef.removeEventListener('mouseleave', this._navigationMouseOut)
+
+          if (this.isNavigationAuto) {
+            rootRef.addEventListener('mousemove', this._navigationMouseMove)
+            rootRef.addEventListener('mouseleave', this._navigationMouseOut)
+          }
+        }
+      }
+    },
+    _navigationHover (event, type) {
+      const target = event.currentTarget
+      if (!target) return
+      target.style.backgroundColor =
+        type === 'over' ? this.navigationActiveColor : ''
+    },
+    _setNavigationState () {
+      const swiperItemLength = this.items.length
+      const notCircular = !this.circularEnabled
+
+      this.prevDisabled = this.currentSync === 0 && notCircular
+      this.nextDisabled =
+        (this.currentSync === swiperItemLength - 1 && notCircular) ||
+        (notCircular &&
+          this.currentSync + this.displayMultipleItemsNumber >= swiperItemLength)
     }
   },
   render (createElement) {
     var slidesDots = []
     var swiperItems = []
     if (this.$slots.default) {
-      this.$slots.default.forEach(vnode => {
+      deepClone(this.$slots.default, createElement).forEach(vnode => {
         if (vnode.componentOptions && vnode.componentOptions.tag === 'v-uni-swiper-item') {
           swiperItems.push(vnode)
         }
       })
     }
     for (let index = 0, length = swiperItems.length; index < length; index++) {
-      let currentSync = this.currentSync
+      const currentSync = this.currentSync
       slidesDots.push(createElement('div', {
+        on: {
+          click: () => this._onSwiperDotClick(index)
+        },
         class: {
           'uni-swiper-dot': true,
           'uni-swiper-dot-active': (index < currentSync + this.displayMultipleItemsNumber && index >= currentSync) || (index < currentSync + this.displayMultipleItemsNumber - length)
         },
         style: {
-          'background': index === currentSync ? this.indicatorActiveColor : this.indicatorColor
+          background: index === currentSync ? this.indicatorActiveColor : this.indicatorColor
         }
       }))
     }
@@ -601,7 +755,7 @@ export default {
     var slidesWrapperChild = [createElement('div', {
       ref: 'slides',
       style: this.slidesStyle,
-      'class': 'uni-swiper-slides'
+      class: 'uni-swiper-slides'
     }, [
       createElement('div', {
         ref: 'slideFrame',
@@ -612,16 +766,80 @@ export default {
     if (this.indicatorDots) {
       slidesWrapperChild.push(createElement('div', {
         ref: 'slidesDots',
-        'class': ['uni-swiper-dots', this.vertical ? 'uni-swiper-dots-vertical' : 'uni-swiper-dots-horizontal']
+        class: ['uni-swiper-dots', this.vertical ? 'uni-swiper-dots-vertical' : 'uni-swiper-dots-horizontal']
       }, slidesDots))
     }
 
+    if (__PLATFORM__ === 'h5') {
+      if (this.navigation) {
+        const navigationClass = {
+          'uni-swiper-navigation-hide': this.hideNavigation,
+          'uni-swiper-navigation-vertical': this.vertical
+        }
+
+        const iconElement = createElement(
+          'i',
+          {
+            domProps: {
+              innerHTML: '&#xe601;'
+            },
+            class: 'uni-btn-icon',
+            style: { color: this.navigationColor, fontSize: '26px' }
+          }
+        )
+
+        const navigationEvent = {
+          mouseover: event => this._navigationHover(event, 'over'),
+          mouseout: event => this._navigationHover(event, 'out')
+        }
+
+        slidesWrapperChild.push(
+          createElement(
+            'div',
+            {
+              on: {
+                click: (e) => this._navigationClick(e, 'prev', this.prevDisabled),
+                ...navigationEvent
+              },
+              class: [
+                'uni-swiper-navigation',
+                'uni-swiper-navigation-prev',
+                {
+                  'uni-swiper-navigation-disabled': this.prevDisabled,
+                  ...navigationClass
+                }
+              ]
+            },
+            [iconElement]
+          ),
+          createElement(
+            'div',
+            {
+              on: {
+                click: (e) => this._navigationClick(e, 'next', this.nextDisabled),
+                ...navigationEvent
+              },
+              class: [
+                'uni-swiper-navigation',
+                'uni-swiper-navigation-next',
+                {
+                  'uni-swiper-navigation-disabled': this.nextDisabled,
+                  ...navigationClass
+                }
+              ]
+            },
+            [iconElement]
+          )
+        )
+      }
+    }
+
     return createElement(
-      'uni-swiper',
-      [createElement('div', {
-        ref: 'slidesWrapper',
-        'class': 'uni-swiper-wrapper',
+      'uni-swiper', {
         on: this.$listeners
+      }, [createElement('div', {
+        ref: 'slidesWrapper',
+        class: 'uni-swiper-wrapper'
       }, slidesWrapperChild)]
     )
   }
@@ -715,5 +933,71 @@ uni-swiper .uni-swiper-dot {
 
 uni-swiper .uni-swiper-dot-active {
   background-color: #000000;
+}
+
+uni-swiper .uni-swiper-navigation {
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  position: absolute;
+  top: 50%;
+  margin-top: -13px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+  border-radius: 50%;
+  opacity: 1;
+}
+
+uni-swiper .uni-swiper-navigation-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+uni-swiper .uni-swiper-navigation-hide {
+  opacity: 0;
+  cursor: auto;
+  pointer-events: none;
+}
+
+uni-swiper .uni-swiper-navigation-prev {
+  left: 10px;
+}
+
+uni-swiper .uni-swiper-navigation-prev i {
+  margin-left: -1px;
+  left: 10px;
+}
+
+uni-swiper .uni-swiper-navigation-prev.uni-swiper-navigation-vertical {
+  top: 18px;
+  left: 50%;
+  margin-left: -13px;
+}
+
+uni-swiper .uni-swiper-navigation-prev.uni-swiper-navigation-vertical i {
+  transform: rotate(90deg);
+  margin-left: auto;
+  margin-top: -2px;
+}
+
+uni-swiper .uni-swiper-navigation-next {
+  right: 10px;
+}
+
+uni-swiper .uni-swiper-navigation-next i {
+  transform: rotate(180deg);
+}
+
+uni-swiper .uni-swiper-navigation-next.uni-swiper-navigation-vertical {
+  top: auto;
+  bottom: 5px;
+  left: 50%;
+  margin-left: -13px;
+}
+
+uni-swiper .uni-swiper-navigation-next.uni-swiper-navigation-vertical i {
+  margin-top: 2px;
+  transform: rotate(270deg);
 }
 </style>

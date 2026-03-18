@@ -8,56 +8,100 @@ const {
 const PLATFORMS = getPlatforms()
 
 const alipayWindowMap = {
-  'defaultTitle': 'navigationBarTitleText',
-  'pullRefresh': 'enablePullDownRefresh',
-  'allowsBounceVertical': 'allowsBounceVertical',
-  'titleBarColor': 'navigationBarBackgroundColor',
-  'optionMenu': 'optionMenu',
-  'backgroundColor': 'backgroundColor',
-  'usingComponents': 'usingComponents',
-  'navigationBarShadow': 'navigationBarShadow',
-  'titleImage': 'titleImage'
+  defaultTitle: 'navigationBarTitleText',
+  navigationBarFrontColor: 'navigationBarTextStyle',
+  pullRefresh: 'enablePullDownRefresh',
+  allowsBounceVertical: 'allowsBounceVertical',
+  titleBarColor: 'navigationBarBackgroundColor',
+  optionMenu: 'optionMenu',
+  backgroundColor: 'backgroundColor',
+  usingComponents: 'usingComponents',
+  navigationBarShadow: 'navigationBarShadow',
+  titleImage: 'titleImage',
+  transparentTitle: 'transparentTitle',
+  titlePenetrate: 'titlePenetrate',
+  onReachBottomDistance: 'onReachBottomDistance',
+  barButtonTheme: {
+    key: 'navigationBarTextStyle',
+    transform: function (value) {
+
+    }
+  }
 }
 
 const alipayTabBarMap = {
-  'textColor': 'color',
-  'selectedColor': 'selectedColor',
-  'backgroundColor': 'backgroundColor',
-  'items': 'list'
+  customize: 'customize',
+  textColor: 'color',
+  selectedColor: 'selectedColor',
+  backgroundColor: 'backgroundColor',
+  items: 'list',
+  overlay: 'overlay'
 }
 
 const alipayTabBarItemMap = {
-  'pagePath': 'pagePath',
-  'name': 'text',
-  'icon': 'iconPath',
-  'activeIcon': 'selectedIconPath'
+  pagePath: 'pagePath',
+  name: 'text',
+  icon: 'iconPath',
+  activeIcon: 'selectedIconPath'
 }
 
+const _hasOwnProperty = Object.prototype.hasOwnProperty
+
 function hasOwn (obj, key) {
-  return hasOwnProperty.call(obj, key)
+  return _hasOwnProperty.call(obj, key)
+}
+
+function trimMPJson (json) {
+  delete json.maxWidth
+  delete json.topWindow
+  delete json.leftWindow
+  delete json.rightWindow
+  if (json.tabBar) {
+    delete json.tabBar.matchMedia
+  }
+  return json
 }
 
 function parseStyle (style = {}, root = '') {
   // TODO pages.json 触发了两次，需要排查
-  style = JSON.parse(JSON.stringify(style))
+  style = trimMPJson(JSON.parse(JSON.stringify(style)))
 
   let platformStyle = {}
 
   Object.keys(style).forEach(name => {
+    if (name === 'app') {
+      name = 'app-plus'
+    } else if (name === 'web') {
+      name = 'h5'
+    }
     if (PLATFORMS.includes(name)) {
       if (name === process.env.UNI_PLATFORM) {
-        platformStyle = style[name] || {}
+        if (name === 'app-plus') {
+          platformStyle = style.app || style[name] || {}
+        } else if (name === 'h5') {
+          platformStyle = style.web || style[name] || {}
+        } else {
+          platformStyle = style[name] || {}
+        }
       }
       delete style[name]
     }
   })
 
-  if (root && process.env.UNI_PLATFORM === 'app-plus') { // 处理分包逻辑
-    if (Array.isArray(platformStyle.subNVues) && platformStyle.subNVues.length) {
+  delete style.app
+  delete style.web
+
+  if (process.env.UNI_PLATFORM === 'app-plus') {
+    if (root && Array.isArray(platformStyle.subNVues) && platformStyle.subNVues.length) { // 处理分包逻辑
       platformStyle.subNVues.forEach(subNVue => {
         subNVue.path = normalizePath(path.join(root, subNVue.path))
       })
     }
+
+    style.disableSwipeBack === true
+      ? platformStyle.popGesture = 'none'
+      : delete platformStyle.popGesture
+    delete style.disableSwipeBack
   }
 
   if (process.env.UNI_PLATFORM === 'mp-alipay') {
@@ -70,7 +114,13 @@ function parseStyle (style = {}, root = '') {
     return Object.assign(windowOptions, platformStyle)
   }
 
-  if (style.navigationBarTextStyle && style.navigationBarTextStyle !== 'black') {
+  if (
+    style.navigationBarTextStyle &&
+    (
+      style.navigationBarTextStyle !== 'black' &&
+      style.navigationBarTextStyle.indexOf('@') !== 0
+    )
+  ) {
     style.navigationBarTextStyle = 'white'
   }
 
@@ -103,9 +153,23 @@ function parseTabBar (style = {}) {
 
   return style
 }
-
+const NON_APP_JSON_KEYS = [
+  'appid',
+  'unipush',
+  'secureNetwork',
+  'usingComponents',
+  'optimization',
+  'scopedSlotsCompiler',
+  'slotMultipleInstance',
+  'uniStatistics',
+  'mergeVirtualHostAttributes',
+  'styleIsolation',
+  'nativeTags'
+]
 module.exports = {
   hasOwn,
   parseStyle,
-  parseTabBar
+  parseTabBar,
+  trimMPJson,
+  NON_APP_JSON_KEYS
 }

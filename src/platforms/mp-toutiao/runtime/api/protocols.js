@@ -1,66 +1,72 @@
+import navigateTo from 'uni-helpers/navigate-to'
+import redirectTo from '../../../mp-weixin/helpers/redirect-to'
 import previewImage from '../../../mp-weixin/helpers/normalize-preview-image'
+import getSystemInfo from '../../../mp-weixin/helpers/system-info'
+import getUserProfile from '../../../mp-weixin/helpers/get-user-profile'
 
 // 不支持的 API 列表
 const todos = [
-  'createCameraContext',
-  'createLivePlayerContext',
-  'getSavedFileInfo',
-  'createMapContext',
-  'onMemoryWarning',
-  'onGyroscopeChange',
-  'startGyroscope',
-  'stopGyroscope',
-  'setScreenBrightness',
-  'getScreenBrightness',
-  'addPhoneContact',
-  'openBluetoothAdapter',
-  'startBluetoothDevicesDiscovery',
-  'onBluetoothDeviceFound',
-  'stopBluetoothDevicesDiscovery',
-  'onBluetoothAdapterStateChange',
-  'getConnectedBluetoothDevices',
-  'getBluetoothDevices',
-  'getBluetoothAdapterState',
-  'closeBluetoothAdapter',
-  'writeBLECharacteristicValue',
-  'readBLECharacteristicValue',
-  'onBLEConnectionStateChange',
-  'onBLECharacteristicValueChange',
-  'notifyBLECharacteristicValueChange',
-  'getBLEDeviceServices',
-  'getBLEDeviceCharacteristics',
-  'createBLEConnection',
-  'closeBLEConnection',
-  'onBeaconServiceChange',
-  'onBeaconUpdate',
-  'getBeacons',
-  'startBeaconDiscovery',
-  'stopBeaconDiscovery',
-  'setNavigationBarColor',
-  'showNavigationBarLoading',
-  'hideNavigationBarLoading',
-  'setTabBarItem',
-  'setTabBarStyle',
-  'hideTabBar',
-  'showTabBar',
-  'setTabBarBadge',
-  'removeTabBarBadge',
-  'showTabBarRedDot',
-  'hideTabBarRedDot',
-  'setBackgroundColor',
-  'setBackgroundTextStyle',
-  'chooseInvoiceTitle',
-  'addTemplate',
-  'deleteTemplate',
-  'getTemplateLibraryById',
-  'getTemplateLibraryList',
-  'getTemplateList',
-  'sendTemplateMessage',
-  'setEnableDebug',
-  'onWindowResize',
-  'offWindowResize',
-  'createOffscreenCanvas',
-  'vibrate'
+  'preloadPage',
+  'unPreloadPage',
+  'loadSubPackage'
+  // 'createCameraContext',
+  // 'createLivePlayerContext',
+  // 'getSavedFileInfo',
+  // 'createMapContext',
+  // 'onMemoryWarning',
+  // 'onGyroscopeChange',
+  // 'startGyroscope',
+  // 'stopGyroscope',
+  // 'setScreenBrightness',
+  // 'getScreenBrightness',
+  // 'addPhoneContact',
+  // 'openBluetoothAdapter',
+  // 'startBluetoothDevicesDiscovery',
+  // 'onBluetoothDeviceFound',
+  // 'stopBluetoothDevicesDiscovery',
+  // 'onBluetoothAdapterStateChange',
+  // 'getConnectedBluetoothDevices',
+  // 'getBluetoothDevices',
+  // 'getBluetoothAdapterState',
+  // 'closeBluetoothAdapter',
+  // 'writeBLECharacteristicValue',
+  // 'readBLECharacteristicValue',
+  // 'onBLEConnectionStateChange',
+  // 'onBLECharacteristicValueChange',
+  // 'notifyBLECharacteristicValueChange',
+  // 'getBLEDeviceServices',
+  // 'getBLEDeviceCharacteristics',
+  // 'createBLEConnection',
+  // 'closeBLEConnection',
+  // 'onBeaconServiceChange',
+  // 'onBeaconUpdate',
+  // 'getBeacons',
+  // 'startBeaconDiscovery',
+  // 'stopBeaconDiscovery',
+  // 'showNavigationBarLoading',
+  // 'hideNavigationBarLoading',
+  // 'setTabBarItem',
+  // 'setTabBarStyle',
+  // 'hideTabBar',
+  // 'showTabBar',
+  // 'setTabBarBadge',
+  // 'removeTabBarBadge',
+  // 'showTabBarRedDot',
+  // 'hideTabBarRedDot',
+  // 'setBackgroundColor',
+  // 'setBackgroundTextStyle',
+  // 'chooseInvoiceTitle',
+  // 'addTemplate',
+  // 'deleteTemplate',
+  // 'getTemplateLibraryById',
+  // 'getTemplateLibraryList',
+  // 'getTemplateList',
+  // 'sendTemplateMessage',
+  // 'setEnableDebug',
+  // 'onWindowResize',
+  // 'offWindowResize',
+  // 'createOffscreenCanvas',
+  // 'vibrate'
 ]
 
 // 存在兼容性的 API 列表
@@ -87,24 +93,20 @@ const canIUses = [
   // 'openDocument',
   // 'onUserCaptureScreen',
   // 'getBackgroundAudioManager',
+  // 'setNavigationBarColor',
 ]
 
 // 需要做转换的 API 列表
 const protocols = {
-  chooseImage: {
-    args: {
-      sizeType: false
-    }
-  },
+  navigateTo: navigateTo(),
+  redirectTo,
   previewImage,
+  getSystemInfo,
+  getSystemInfoSync: getSystemInfo,
+  getUserProfile,
   connectSocket: {
     args: {
       method: false
-    }
-  },
-  chooseVideo: {
-    args: {
-      camera: false
     }
   },
   scanCode: {
@@ -116,28 +118,6 @@ const protocols = {
   startAccelerometer: {
     args: {
       interval: false
-    }
-  },
-  showToast: {
-    args: {
-      image: false,
-      mask: false
-    }
-  },
-  showLoading: {
-    args: {
-      mask: false
-    }
-  },
-  showModal: {
-    args: {
-      cancelColor: false,
-      confirmColor: false
-    }
-  },
-  showActionSheet: {
-    args: {
-      itemColor: false
     }
   },
   login: {
@@ -153,14 +133,23 @@ const protocols = {
     }
   },
   requestPayment: {
-    name: tt.canIUse && tt.canIUse('pay') ? 'pay' : 'requestPayment',
+    name: tt.pay ? 'pay' : 'requestPayment',
     args: {
-      orderInfo: tt.canIUse && tt.canIUse('pay') ? 'orderInfo' : 'data'
+      orderInfo: tt.pay ? 'orderInfo' : 'data'
     }
   },
-  getFileInfo: {
-    args: {
-      digestAlgorithm: false
+  showTabBar: {
+    args (fromArgs, toArgs) {
+      if (fromArgs.animation === undefined) {
+        toArgs.animation = false
+      }
+    }
+  },
+  hideTabBar: {
+    args (fromArgs, toArgs) {
+      if (fromArgs.animation === undefined) {
+        toArgs.animation = false
+      }
     }
   }
 }

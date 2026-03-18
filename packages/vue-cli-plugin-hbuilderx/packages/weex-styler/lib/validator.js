@@ -549,6 +549,7 @@ function FLEW_WRAP_VALIDATOR (v) {
 
 var PROP_NAME_GROUPS = {
   boxModel: {
+    display: genEnumValidator(['flex']),
     width: LENGTH_VALIDATOR,
     height: LENGTH_VALIDATOR,
     overflow: genEnumValidator(['hidden']),
@@ -600,6 +601,7 @@ var PROP_NAME_GROUPS = {
   },
   common: {
     opacity: NUMBER_VALIDATOR,
+    boxShadow: ANYTHING_VALIDATOR,
     backgroundColor: COLOR_VALIDATOR,
     backgroundImage: ANYTHING_VALIDATOR
   },

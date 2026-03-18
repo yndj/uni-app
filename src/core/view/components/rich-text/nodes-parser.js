@@ -2,59 +2,82 @@ import {
   hasOwn,
   isPlainObject
 } from 'uni-shared'
+import getRealPath from 'uni-platform/helpers/get-real-path'
 
 const TAGS = {
-  'a': '',
-  'abbr': '',
-  'b': '',
-  'blockquote': '',
-  'br': '',
-  'code': '',
-  'col': ['span', 'width'],
-  'colgroup': ['span', 'width'],
-  'dd': '',
-  'del': '',
-  'div': '',
-  'dl': '',
-  'dt': '',
-  'em': '',
-  'fieldset': '',
-  'h1': '',
-  'h2': '',
-  'h3': '',
-  'h4': '',
-  'h5': '',
-  'h6': '',
-  'hr': '',
-  'i': '',
-  'img': ['alt', 'src', 'height', 'width'],
-  'ins': '',
-  'label': '',
-  'legend': '',
-  'li': '',
-  'ol': ['start', 'type'],
-  'p': '',
-  'q': '',
-  'span': '',
-  'strong': '',
-  'sub': '',
-  'sup': '',
-  'table': ['width'],
-  'tbody': '',
-  'td': ['colspan', 'rowspan', 'height', 'width'],
-  'tfoot': '',
-  'th': ['colspan', 'rowspan', 'height', 'width'],
-  'thead': '',
-  'tr': '',
-  'ul': ''
+  a: '',
+  abbr: '',
+  address: '',
+  article: '',
+  aside: '',
+  b: '',
+  bdi: '',
+  bdo: ['dir'],
+  big: '',
+  blockquote: '',
+  br: '',
+  caption: '',
+  center: '',
+  cite: '',
+  code: '',
+  col: ['span', 'width'],
+  colgroup: ['span', 'width'],
+  dd: '',
+  del: '',
+  div: '',
+  dl: '',
+  dt: '',
+  em: '',
+  fieldset: '',
+  font: '',
+  footer: '',
+  h1: '',
+  h2: '',
+  h3: '',
+  h4: '',
+  h5: '',
+  h6: '',
+  header: '',
+  hr: '',
+  i: '',
+  img: ['alt', 'src', 'height', 'width'],
+  ins: '',
+  label: '',
+  legend: '',
+  li: '',
+  mark: '',
+  nav: '',
+  ol: ['start', 'type'],
+  p: '',
+  pre: '',
+  q: '',
+  rt: '',
+  ruby: '',
+  s: '',
+  section: '',
+  small: '',
+  span: '',
+  strong: '',
+  sub: '',
+  sup: '',
+  table: ['width'],
+  tbody: '',
+  td: ['colspan', 'height', 'rowspan', 'width'],
+  tfoot: '',
+  th: ['colspan', 'height', 'rowspan', 'width'],
+  thead: '',
+  tr: ['colspan', 'height', 'rowspan', 'width'],
+  tt: '',
+  u: '',
+  ul: ''
 }
 const CHARS = {
-  'amp': '&',
-  'gt': '>',
-  'lt': '<',
-  'nbsp': ' ',
-  'quot': '"',
-  'apos': "'"
+  amp: '&',
+  gt: '>',
+  lt: '<',
+  nbsp: ' ',
+  quot: '"',
+  apos: "'"
 }
 
 function decodeEntities (htmlString) {
@@ -68,13 +91,18 @@ function decodeEntities (htmlString) {
     if (/^#x[0-9a-f]{1,4}$/i.test(stage)) {
       return String.fromCharCode('0' + stage.slice(1))
     }
-    let wrap = document.createElement('div')
+    const wrap = document.createElement('div')
     wrap.innerHTML = match
     return wrap.innerText || wrap.textContent
   })
 }
 
-export default function parseNodes (nodes, parentNode) {
+function normalizeValue (tagName, name, value) {
+  if (tagName === 'img' && name === 'src') return getRealPath(value)
+  return value
+}
+
+export default function parseNodes (nodes, parentNode, scopeId, triggerItemClick) {
   nodes.forEach(function (node) {
     if (!isPlainObject(node)) {
       return
@@ -92,6 +120,7 @@ export default function parseNodes (nodes, parentNode) {
         return
       }
       const attrs = node.attrs
+      scopeId && elem.setAttribute(scopeId, '')
       if (isPlainObject(attrs)) {
         const tagAttrs = TAGS[tagName] || []
         Object.keys(attrs).forEach(function (name) {
@@ -105,15 +134,17 @@ export default function parseNodes (nodes, parentNode) {
               break
             default:
               if (tagAttrs.indexOf(name) !== -1) {
-                elem.setAttribute(name, value)
+                elem.setAttribute(name, normalizeValue(tagName, name, value))
               }
           }
         })
       }
 
+      processClickEvent(node, elem, triggerItemClick)
+
       const children = node.children
       if (Array.isArray(children) && children.length) {
-        parseNodes(node.children, elem)
+        parseNodes(node.children, elem, scopeId, triggerItemClick)
       }
 
       parentNode.appendChild(elem)
@@ -124,4 +155,14 @@ export default function parseNodes (nodes, parentNode) {
     }
   })
   return parentNode
+}
+
+function processClickEvent (node, elem, triggerItemClick) {
+  if (['a', 'img'].includes(node.name) && triggerItemClick) {
+    elem.setAttribute('onClick', 'return false;')
+    elem.addEventListener('click', (e) => {
+      triggerItemClick(e, { node })
+      e.stopPropagation()
+    }, true)
+  }
 }

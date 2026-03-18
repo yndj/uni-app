@@ -2,6 +2,7 @@ const t = require('@babel/types')
 
 const {
   VAR_ORIGINAL,
+  VAR_INDEX,
   IDENTIFIER_FOR,
   METHOD_RENDER_LIST
 } = require('../../constants')
@@ -11,10 +12,13 @@ const {
 } = require('./statements')
 
 const {
+  hasOwn,
   genCode,
   traverseKey,
   processMemberExpression,
-  getForIndexIdentifier
+  getForIndexIdentifier,
+  isSimpleObjectExpression,
+  traverseFilter
 } = require('../../util')
 
 const getMemberExpr = require('./member-expr')
@@ -24,8 +28,8 @@ const origVisitor = {
   Identifier (path) {
     if (
       !path.node.$mpProcessed &&
-            path.node.name === this.forItem &&
-            path.isReferencedIdentifier()
+      path.node.name === this.forItem &&
+      path.isReferencedIdentifier()
     ) {
       const forItemIdentifier = t.identifier(this.forItem)
       forItemIdentifier.$mpProcessed = true
@@ -60,10 +64,13 @@ function replaceRefrence (forItem, code) {
 }
 
 function getForExtra (forItem, forIndex, path, state) {
-  let forCode = genCode(processMemberExpression(path.node.arguments[0], state), true)
+  const arg0 = path.node.arguments[0]
+  const isNumeric = t.isNumericLiteral(arg0)
+  const isString = t.isStringLiteral(arg0)
+  let forCode = genCode(processMemberExpression(arg0, state), true)
 
   const forKey = traverseKey(path.node)
-  let origForKeyCode = t.isIdentifier(forKey) && forKey.name
+  const origForKeyCode = t.isIdentifier(forKey) && forKey.name
   let forKeyCode = ''
   if (forKey) {
     forKeyCode = genCode(processMemberExpression(forKey, state), true)
@@ -79,11 +86,17 @@ function getForExtra (forItem, forIndex, path, state) {
       forExtraElements.push(...scoped.forExtra)
     }
   }
+  let forCodeElem = t.stringLiteral(forCode)
+  if (isNumeric) {
+    forCodeElem = t.numericLiteral(arg0.value)
+  } else if (isString) {
+    forCodeElem = t.stringLiteral('#s#' + forCode)
+  }
   if (forItem === origForKeyCode) { // 以自身为 key，则依据 forIndex 查找 ['list','',__i0__],['list','',index]
     forExtraElements.push(
       t.arrayExpression(
         [
-          t.stringLiteral(forCode),
+          forCodeElem,
           t.stringLiteral(''),
           t.identifier(forIndex)
         ]
@@ -93,7 +106,7 @@ function getForExtra (forItem, forIndex, path, state) {
     forExtraElements.push(
       t.arrayExpression(
         [
-          t.stringLiteral(forCode),
+          forCodeElem,
           t.stringLiteral(forIndex === forKeyCode ? '' : forKeyCode),
           forKey || t.identifier(forIndex)
         ]
@@ -108,9 +121,13 @@ module.exports = function traverseRenderList (path, state) {
   const params = functionExpression.node.params
   const forItem = params[0].name
   let forIndex = params.length > 1 && params[1].name
+  let forKey = params.length > 2 && params[2].name
+  if (forKey) {
+    [forKey, forIndex] = [forIndex, forKey]
+  }
 
   if (!forIndex) {
-    if (!state.options.hasOwnProperty('$forIndexId')) {
+    if (!hasOwn(state.options, '$forIndexId')) {
       state.options.$forIndexId = 0
     }
     forIndex = getForIndexIdentifier(state.options.$forIndexId++)
@@ -120,10 +137,13 @@ module.exports = function traverseRenderList (path, state) {
   const forStateScoped = {
     context: forItem,
     forItem,
+    forKey,
     forIndex,
     forExtra: getForExtra(forItem, forIndex, path, state),
     propertyArray: [],
-    declarationArray: []
+    declarationArray: [],
+    renderSlotStatementArray: [],
+    path
   }
 
   const forState = {
@@ -136,13 +156,16 @@ module.exports = function traverseRenderList (path, state) {
     identifierArray: state.identifierArray,
     propertyArray: [],
     declarationArray: [],
-    initExpressionStatementArray: state.initExpressionStatementArray
+    computedProperty: {},
+    initExpressionStatementArray: state.initExpressionStatementArray,
+    renderSlotStatementArray: state.renderSlotStatementArray,
+    resolveSlotStatementArray: state.resolveSlotStatementArray
   }
 
   functionExpression.traverse(require('./visitor'), forState)
 
   const forPath = path.get('arguments.0')
-  if (forStateScoped.propertyArray.length) {
+  if (forStateScoped.propertyArray.length || forStateScoped.renderSlotStatementArray.length || forKey) {
     // for => map
     forPath.replaceWith(
       getMemberExpr(
@@ -152,9 +175,12 @@ module.exports = function traverseRenderList (path, state) {
           forPath.node,
           forStateScoped.propertyArray,
           forStateScoped.declarationArray,
+          forStateScoped.renderSlotStatementArray,
           [], // eventPropertyArray
           forItem,
-          forIndex
+          forKey,
+          forIndex,
+          state
         ),
         forState
       )
@@ -163,6 +189,38 @@ module.exports = function traverseRenderList (path, state) {
     functionExpression.traverse(origVisitor, {
       forItem
     })
+    if (forKey) {
+      functionExpression.traverse({
+        Identifier (path) {
+          if (
+            !path.node.$mpProcessed &&
+            path.node.name === this.forIndex &&
+            path.isReferencedIdentifier()
+          ) {
+            const forItemIdentifier = t.identifier(VAR_INDEX)
+            forItemIdentifier.$mpProcessed = true
+            path.replaceWith(
+              t.memberExpression(t.identifier(this.forItem), forItemIdentifier)
+            )
+          }
+        }
+      }, {
+        forItem,
+        forIndex
+      })
+    }
+    const keys = Object.keys(forState.computedProperty)
+    if (keys.length) {
+      keys.forEach(key => {
+        const property = forState.computedProperty[key]
+        if (t.isMemberExpression(property) && property.object.name === forItem) {
+          property.object = t.memberExpression(t.identifier(forItem), t.identifier(VAR_ORIGINAL))
+          forState.options.replaceCodes[key] = `'+${genCode(property, true)}+'`
+        }
+      })
+    }
+  } else if ((forPath.isCallExpression() && !traverseFilter(forPath.node.callee, state)) || (forPath.isObjectExpression() && !isSimpleObjectExpression(forPath.node))) {
+    forPath.replaceWith(getMemberExpr(forPath, IDENTIFIER_FOR, forPath.node, forState))
   } else {
     forPath.traverse(require('./visitor'), forState)
   }

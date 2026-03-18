@@ -3,15 +3,12 @@ const path = require('path')
 const loaderUtils = require('loader-utils')
 
 const {
+  getPagesJson,
   parsePages,
   normalizePath,
   parsePagesJson,
   parseManifestJson
 } = require('@dcloudio/uni-cli-shared')
-
-const {
-  getPagesJson
-} = require('@dcloudio/uni-cli-shared/lib/cache')
 
 const {
   pagesJsonJsFileName
@@ -29,20 +26,33 @@ function checkEmitFile (filePath, jsonObj, changedEmitFiles) {
   }
 }
 
-module.exports = function (content) {
+module.exports = function (content, map) {
+  // content = JSON.stringify(require('@dcloudio/uni-cli-shared/lib/uni_modules').getPagesJson(content))
+  let queryParam
   if (this.resourceQuery) {
-    const params = loaderUtils.parseQuery(this.resourceQuery)
-    if (params) {
-      if (params.type === 'style') {
+    queryParam = loaderUtils.parseQuery(this.resourceQuery)
+    if (queryParam) {
+      if (queryParam.type === 'style') {
         return `export default ${JSON.stringify(getPagesJson())}`
-      } else if (params.type === 'stat') {
+      } else if (queryParam.type === 'stat') {
         return `export default ${JSON.stringify(process.UNI_STAT_CONFIG || {})}`
       }
     }
   }
+  // add deps
+  // global.uniModules.forEach(module => {
+  //   const uniModulePagesJsonPath = path.resolve(process.env.UNI_INPUT_DIR, 'uni_modules', module, 'pages.json')
+  //   if (fs.existsSync(uniModulePagesJsonPath)) {
+  //     this.addDependency(uniModulePagesJsonPath)
+  //   }
+  // })
 
-  if (process.env.UNI_USING_COMPONENTS || process.env.UNI_PLATFORM === 'h5') {
-    return require('./index-new').call(this, content)
+  if (
+    process.env.UNI_USING_COMPONENTS ||
+    process.env.UNI_PLATFORM === 'h5' ||
+    process.env.UNI_PLATFORM === 'quickapp-native'
+  ) {
+    return require('./index-new').call(this, content, map)
   }
 
   this.cacheable && this.cacheable()
@@ -60,6 +70,14 @@ module.exports = function (content) {
       this.addDependency(file)
     }
   })
+
+  if (this.resourceQuery && queryParam) {
+    if (queryParam) {
+      if (queryParam.type === 'origin-pages-json') {
+        return `export default ${JSON.stringify(pagesJson)}`
+      }
+    }
+  }
 
   if (manifestJson.transformPx === false) {
     process.UNI_TRANSFORM_PX = false
@@ -94,5 +112,5 @@ module.exports = function (content) {
     this.emitFile(name + '.json', emitFileCaches[name])
   })
 
-  return ''
+  this.callback(null, '', map)
 }

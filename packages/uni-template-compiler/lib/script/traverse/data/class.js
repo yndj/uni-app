@@ -1,13 +1,25 @@
 const t = require('@babel/types')
+const uniI18n = require('@dcloudio/uni-cli-i18n')
 
 const {
-  getCode
+  VIRTUAL_HOST_CLASS
+} = require('../../../constants')
+
+const {
+  getCode,
+  isRootElement,
+  isVForElement
 } = require('../../../util')
+
+const transPlatform = ['mp-toutiao', 'mp-alipay', 'mp-lark']
 
 function processClassArrayExpressionElements (classArrayExpression) {
   let binaryExpression
 
   classArrayExpression.elements.forEach(expr => {
+    if (t.isArrayExpression(expr)) {
+      expr = processClassArrayExpressionElements(expr)
+    }
     if (!binaryExpression) {
       binaryExpression = t.parenthesizedExpression(expr)
     } else {
@@ -28,15 +40,14 @@ function processClassArrayExpressionElements (classArrayExpression) {
 
 function processStaticClass (classArrayExpression, staticClassPath, state) {
   if (staticClassPath) {
-    classArrayExpression.elements.unshift(
-      t.stringLiteral(staticClassPath.node.value.value)
-    )
+    const staticClassPathArr = staticClassPath.node.value.value.split(' ')
+    for (let len = staticClassPathArr.length, index = len - 1; index >= 0; index--) {
+      classArrayExpression.elements.unshift(t.stringLiteral(staticClassPathArr[index]))
+    }
     staticClassPath.remove()
   }
-  if (
-    state.options.platform.name === 'mp-toutiao' ||
-        state.options.platform.name === 'mp-alipay'
-  ) {
+
+  if (transPlatform.includes(state.options.platform.name)) {
     // classArrayExpression => binaryExpression
     return processClassArrayExpressionElements(classArrayExpression)
   }
@@ -51,7 +62,7 @@ function processClassObjectExpression (classValuePath) {
     elements.push(
       t.conditionalExpression(
         t.parenthesizedExpression(propertyPath.node.value),
-        t.stringLiteral(key.name || key.value),
+        propertyPath.node.computed ? t.parenthesizedExpression(key) : t.stringLiteral(key.name || key.value),
         t.stringLiteral('')
       )
     )
@@ -70,47 +81,31 @@ function processClassArrayExpression (classValuePath) {
 }
 
 module.exports = function processClass (paths, path, state) {
-  const classPath = paths['class']
-  const staticClassPath = paths['staticClass']
+  const classPath = paths.class
+  const staticClassPath = paths.staticClass
+  const mergeVirtualHostAttributes = state.options.mergeVirtualHostAttributes
+  let classArrayExpression
   if (classPath) {
     const classValuePath = classPath.get('value')
     if (classValuePath.isObjectExpression()) { // object
-      classValuePath.replaceWith(
-        processStaticClass(
-          processClassObjectExpression(classValuePath),
-          staticClassPath,
-          state
-        )
-      )
+      classArrayExpression = processClassObjectExpression(classValuePath)
     } else if (classValuePath.isArrayExpression()) { // array
-      classValuePath.replaceWith(
-        processStaticClass(
-          processClassArrayExpression(classValuePath),
-          staticClassPath,
-          state
-        )
-      )
+      classArrayExpression = processClassArrayExpression(classValuePath)
     } else if (
       classValuePath.isStringLiteral() || // :class="'a'"
-            classValuePath.isIdentifier() || // TODO 需要优化到下一个条件，:class="classObject"
-            classValuePath.isMemberExpression() || // 需要优化到下一个条件，:class="item.classObject"
-            classValuePath.isConditionalExpression() ||
-            classValuePath.isLogicalExpression() ||
-            classValuePath.isBinaryExpression()
+      classValuePath.isIdentifier() || // TODO 需要优化到下一个条件，:class="classObject"
+      classValuePath.isMemberExpression() || // 需要优化到下一个条件，:class="item.classObject"
+      classValuePath.isConditionalExpression() ||
+      classValuePath.isLogicalExpression() ||
+      classValuePath.isBinaryExpression()
     ) {
       // 理论上 ConditionalExpression,LogicalExpression 可能存在 classObject，应该__get_class，还是先不考虑这种情况吧
       // ConditionalExpression :class="index === currentIndex ? activeStyle : itemStyle"
       // BinaryExpression  :class="'m-content-head-'+message.user"
-      classValuePath.replaceWith(
-        processStaticClass(
-          t.arrayExpression([classValuePath.node]),
-          staticClassPath,
-          state
-        )
-      )
+      classArrayExpression = t.arrayExpression([classValuePath.node])
     } else if (
       classValuePath.isIdentifier() ||
-            classValuePath.isMemberExpression()
+      classValuePath.isMemberExpression()
     ) { // classObject :class="classObject" :class="vm.classObject"
       // TODO 目前先不考虑 classObject,styleObject
 
@@ -128,8 +123,23 @@ module.exports = function processClass (paths, path, state) {
       //         )
       //       )
     } else {
-      state.errors.add(`:class 不支持 ${getCode(classValuePath.node)} 语法`)
+      state.errors.add(':class' + uniI18n.__('templateCompiler.noSupportSyntax', { 0: getCode(classValuePath.node) }))
     }
+  }
+  if (mergeVirtualHostAttributes && isRootElement(path.parentPath) && !isVForElement(path.parentPath)) {
+    const virtualHostClass = transPlatform.includes(state.options.platform.name) ? t.logicalExpression('||', t.identifier(VIRTUAL_HOST_CLASS), t.stringLiteral('')) : t.identifier(VIRTUAL_HOST_CLASS)
+    if (classArrayExpression) {
+      classArrayExpression.elements.push(virtualHostClass)
+    } else {
+      classArrayExpression = t.arrayExpression([virtualHostClass])
+      const property = t.objectProperty(t.identifier('class'), processStaticClass(classArrayExpression, staticClassPath, state))
+      path.node.properties.push(property)
+      return []
+    }
+  }
+  if (classArrayExpression) {
+    const classValuePath = classPath.get('value')
+    classValuePath.replaceWith(processStaticClass(classArrayExpression, staticClassPath, state))
   }
   return []
 }

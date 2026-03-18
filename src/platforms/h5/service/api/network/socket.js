@@ -26,9 +26,12 @@ class SocketTask {
       eventNames.forEach(name => {
         this._callbacks[name] = []
         webSocket.addEventListener(name, event => {
-          const res = name === 'message' ? {
-            data: event.data
-          } : {}
+          const { data, code, reason } = event
+          const res = name === 'message'
+            ? { data }
+            : name === 'close'
+              ? { code, reason }
+              : {}
           this._callbacks[name].forEach(callback => {
             try {
               callback(res)
@@ -47,7 +50,7 @@ class SocketTask {
           }
         })
       })
-      let propertys = ['CLOSED', 'CLOSING', 'CONNECTING', 'OPEN', 'readyState']
+      const propertys = ['CLOSED', 'CLOSING', 'CONNECTING', 'OPEN', 'readyState']
       propertys.forEach((property) => {
         Object.defineProperty(this, property, {
           get () {
@@ -60,6 +63,7 @@ class SocketTask {
     }
     callback(error, this)
   }
+
   /**
    * 发送
    * @param {any} data
@@ -68,12 +72,16 @@ class SocketTask {
     const data = options.data
     const ws = this._webSocket
     try {
+      if (ws.readyState !== ws.OPEN) {
+        throw new Error('SocketTask.readyState is not OPEN')
+      }
       ws.send(data)
       this._callback(options, 'sendSocketMessage:ok')
     } catch (error) {
       this._callback(options, `sendSocketMessage:fail ${error}`)
     }
   }
+
   /**
    * 关闭
    * @param {number} code
@@ -88,11 +96,12 @@ class SocketTask {
     }
     try {
       ws.close(...arrgs)
-      this._callback(options, 'sendSocketMessage:ok')
+      this._callback(options, 'closeSocket:ok')
     } catch (error) {
-      this._callback(options, `sendSocketMessage:fail ${error}`)
+      this._callback(options, `closeSocket:fail ${error}`)
     }
   }
+
   /**
    * 通用回调处理
    */

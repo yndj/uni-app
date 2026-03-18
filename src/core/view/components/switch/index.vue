@@ -1,18 +1,23 @@
 <template>
   <uni-switch
+    :id="id"
+    :disabled="disabled"
     v-on="$listeners"
-    @click="_onClick">
+    @click="_onClick"
+  >
     <div class="uni-switch-wrapper">
       <div
         v-show="type === 'switch'"
         :class="[switchChecked ? 'uni-switch-input-checked' : '']"
-        :style="{backgroundColor: switchChecked ? color : '#DFDFDF',borderColor:switchChecked ? color : '#DFDFDF'}"
-        class="uni-switch-input" />
+        :style="checkedColor"
+        class="uni-switch-input"
+      />
       <div
         v-show="type === 'checkbox'"
         :class="[switchChecked ? 'uni-checkbox-input-checked' : '']"
         :style="{color: color}"
-        class="uni-checkbox-input" />
+        class="uni-checkbox-input"
+      />
     </div>
   </uni-switch>
 </template>
@@ -48,12 +53,23 @@ export default {
     },
     color: {
       type: String,
-      default: '#007aff'
+      default: ''
     }
   },
   data () {
     return {
       switchChecked: this.checked
+    }
+  },
+  computed: {
+    checkedColor () {
+      if (this.switchChecked && this.color) {
+        return {
+          backgroundColor: this.color,
+          borderColor: this.color
+        }
+      }
+      return {}
     }
   },
   watch: {
@@ -91,10 +107,10 @@ export default {
       this.switchChecked = false
     },
     _getFormData () {
-      let data = {}
+      const data = {}
       if (this.name !== '') {
-        data['value'] = this.switchChecked
-        data['key'] = this.name
+        data.value = this.switchChecked
+        data.key = this.name
       }
       return data
     }
@@ -105,10 +121,15 @@ export default {
 	uni-switch {
 		-webkit-tap-highlight-color: transparent;
 		display: inline-block;
+		cursor: pointer;
 	}
 
 	uni-switch[hidden] {
 		display: none;
+	}
+
+	uni-switch[disabled] {
+		cursor: not-allowed;
 	}
 
 	uni-switch .uni-switch-wrapper {
@@ -132,6 +153,10 @@ export default {
 		box-sizing: border-box;
 		background-color: #DFDFDF;
 		transition: background-color 0.1s, border 0.1s;
+	}
+
+	uni-switch[disabled] .uni-switch-input {
+		opacity: .7;
 	}
 
 	uni-switch .uni-switch-input:before {
@@ -192,6 +217,10 @@ export default {
 		color: #007aff;
 	}
 
+	uni-switch:not([disabled]) .uni-checkbox-input:hover {
+		border-color: #007aff;
+	}
+
 	uni-switch .uni-checkbox-input.uni-checkbox-input-checked:before {
 		font: normal normal normal 14px/1 "uni";
 		content: "\EA08";
@@ -211,4 +240,26 @@ export default {
 	uni-switch .uni-checkbox-input.uni-checkbox-input-disabled:before {
 		color: #ADADAD;
 	}
+
+	@media (prefers-color-scheme: dark) {
+		uni-switch .uni-switch-input {
+			border-color: #3b3b3f;
+		}
+
+		uni-switch .uni-switch-input,
+		uni-switch .uni-switch-input:before {
+			background-color: #3b3b3f;
+		}
+
+		uni-switch .uni-switch-input:after {
+			background-color: #fff;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+		}
+
+		uni-switch .uni-checkbox-input {
+			background-color: #2c2c2c;
+			border: 1px solid #656565;
+		}
+	}
+
 </style>

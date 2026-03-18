@@ -1,28 +1,36 @@
 <template>
   <uni-slider
+    :id="id"
     ref="uni-slider"
     v-on="$listeners"
-    @click="_onClick">
+    @click="_onClick"
+  >
     <div class="uni-slider-wrapper">
       <div class="uni-slider-tap-area">
         <div
           :style="setBgColor"
-          class="uni-slider-handle-wrapper">
+          class="uni-slider-handle-wrapper"
+        >
           <div
             ref="uni-slider-handle"
             :style="setBlockBg"
-            class="uni-slider-handle" />
+            class="uni-slider-handle"
+          />
           <div
             :style="setBlockStyle"
-            class="uni-slider-thumb" />
+            class="uni-slider-thumb"
+          />
           <div
             :style="setActiveColor"
-            class="uni-slider-track" />
+            class="uni-slider-track"
+          />
         </div>
       </div>
       <span
         v-show="showValue"
-        class="uni-slider-value">{{ sliderValue }}</span>
+        ref="uni-slider-value"
+        class="uni-slider-value"
+      >{{ sliderValue }}</span>
     </div>
     <slot />
   </uni-slider>
@@ -33,11 +41,21 @@ import {
   listeners
 } from 'uni-mixins'
 import touchtrack from 'uni-mixins/touchtrack'
+
+function lerp (min, max, t) {
+  t = Math.min(1, Math.max(0, t))
+  return min * (1 - t) + max * t
+}
+
 export default {
   name: 'Slider',
   mixins: [emitter, listeners, touchtrack],
   props: {
     name: {
+      type: String,
+      default: ''
+    },
+    id: {
       type: String,
       default: ''
     },
@@ -121,6 +139,13 @@ export default {
         backgroundColor: this._getActiveColor(),
         width: this._getValueWidth()
       }
+    },
+    truthStep () {
+      const step = Number(this.step)
+      if (isNaN(step)) {
+        return 1
+      }
+      return step
     }
   },
   watch: {
@@ -132,6 +157,12 @@ export default {
     this.touchtrack(this.$refs['uni-slider-handle'], '_onTrack')
   },
   created () {
+    if (this.sliderValue < Number(this.min)) {
+      this.sliderValue = Number(this.min)
+    }
+    if (this.sliderValue > Number(this.max)) {
+      this.sliderValue = Number(this.max)
+    }
     this.$dispatch('Form', 'uni-form-group-update', {
       type: 'add',
       vm: this
@@ -145,15 +176,25 @@ export default {
   },
   methods: {
     _onUserChangedValue (e) {
-      let slider = this.$refs['uni-slider']
-      let offsetWidth = slider.offsetWidth
-      let boxLeft = slider.getBoundingClientRect().left
-      let value = (e.x - boxLeft) * (this.max - this.min) / offsetWidth + Number(this.min)
-      this.sliderValue = this._filterValue(value)
+      const max = Number(this.max)
+      const min = Number(this.min)
+      const sliderRightBox = this.$refs['uni-slider-value']
+      const sliderRightBoxLeft = getComputedStyle(sliderRightBox, null).marginLeft
+      let sliderRightBoxWidth = sliderRightBox.offsetWidth
+      sliderRightBoxWidth = sliderRightBoxWidth + parseInt(sliderRightBoxLeft)
+      const slider = this.$refs['uni-slider']
+      const offsetWidth = slider.offsetWidth - (this.showValue ? sliderRightBoxWidth : 0)
+      const boxLeft = slider.getBoundingClientRect().left
+      const proportion = (e.x - boxLeft) / offsetWidth
+      const stepDecimal = (this.truthStep + '').split('.')[1]
+      this.sliderValue = parseFloat(
+        this._filterValue(min, this.truthStep, lerp(min, max, proportion)).toFixed(
+          stepDecimal ? stepDecimal.length : 0
+        )
+      )
     },
-    _filterValue (e) {
-      return e < this.min ? this.min : e > this.max ? this.max : Math.round((e - this.min) / this
-        .step) * this.step + Number(this.min)
+    _filterValue (min, step, value) {
+      return Math.round((value - min) / step) * step + min
     },
     _getValueWidth () {
       return 100 * (this.sliderValue - this.min) / (this.max - this.min) + '%'
@@ -169,10 +210,10 @@ export default {
     _onTrack: function (e) {
       if (!this.disabled) {
         return e.detail.state === 'move' ? (this._onUserChangedValue({
-          x: e.detail.x0
+          x: e.detail.x
         }), this.$trigger('changing', e, {
           value: this.sliderValue
-        }), !1) : void (e.detail.state === 'end' && this.$trigger('change', e, {
+        }), !1) : (e.detail.state === 'end' && this.$trigger('change', e, {
           value: this.sliderValue
         }))
       }
@@ -190,10 +231,10 @@ export default {
       this.sliderValue = this.min
     },
     _getFormData () {
-      let data = {}
+      const data = {}
       if (this.name !== '') {
-        data['value'] = this.sliderValue
-        data['key'] = this.name
+        data.value = this.sliderValue
+        data.key = this.name
       }
       return data
     }
@@ -201,91 +242,93 @@ export default {
 }
 </script>
 <style>
-	uni-slider {
-		margin: 10px 18px;
-		padding: 0;
-		display: block;
-	}
+uni-slider {
+  margin: 10px 18px;
+  padding: 0;
+  display: block;
+}
 
-	uni-slider[hidden] {
-		display: none;
-	}
+uni-slider[hidden] {
+  display: none;
+}
 
-	uni-slider .uni-slider-wrapper {
-		display: -webkit-flex;
-		display: flex;
-		-webkit-align-items: center;
-		align-items: center;
-		min-height: 16px;
-	}
+uni-slider .uni-slider-wrapper {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  min-height: 16px;
+}
 
-	uni-slider .uni-slider-tap-area {
-		-webkit-flex: 1;
-		flex: 1;
-		padding: 8px 0;
-	}
+uni-slider .uni-slider-tap-area {
+  -webkit-flex: 1;
+  flex: 1;
+  padding: 8px 0;
+}
 
-	uni-slider .uni-slider-handle-wrapper {
-		position: relative;
-		height: 2px;
-		border-radius: 5px;
-		background-color: #e9e9e9;
-		cursor: pointer;
-		transition: background-color 0.3s ease;
-		-webkit-tap-highlight-color: transparent;
-	}
+uni-slider .uni-slider-handle-wrapper {
+  position: relative;
+  height: 2px;
+  border-radius: 5px;
+  background-color: #e9e9e9;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
 
-	uni-slider .uni-slider-track {
-		height: 100%;
-		border-radius: 6px;
-		background-color: #007aff;
-		transition: background-color 0.3s ease;
-	}
+uni-slider .uni-slider-track {
+  height: 100%;
+  border-radius: 6px;
+  background-color: #007aff;
+  transition: background-color 0.3s ease;
+}
 
-	uni-slider .uni-slider-handle,
-	uni-slider .uni-slider-thumb {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		cursor: pointer;
-		border-radius: 50%;
-		transition: border-color 0.3s ease;
-	}
+uni-slider .uni-slider-handle,
+uni-slider .uni-slider-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: border-color 0.3s ease;
+}
 
-	uni-slider .uni-slider-handle {
-		width: 28px;
-		height: 28px;
-		margin-top: -14px;
-		margin-left: -14px;
-		background-color: transparent;
-		z-index: 3;
-	}
+uni-slider .uni-slider-handle {
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  margin-left: -14px;
+  background-color: transparent;
+  z-index: 3;
+  cursor: grab;
+}
 
-	uni-slider .uni-slider-thumb {
-		z-index: 2;
-		box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
-	}
+uni-slider .uni-slider-thumb {
+  z-index: 2;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+}
 
-	uni-slider .uni-slider-step {
-		position: absolute;
-		width: 100%;
-		height: 2px;
-		background: transparent;
-		z-index: 1;
-	}
+uni-slider .uni-slider-step {
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+  z-index: 1;
+}
 
-	uni-slider .uni-slider-value {
-		color: #888;
-		font-size: 14px;
-		margin-left: 1em;
-	}
+uni-slider .uni-slider-value {
+  width: 3ch;
+  color: #888;
+  font-size: 14px;
+  margin-left: 1em;
+}
 
-	uni-slider .uni-slider-disabled .uni-slider-track {
-		background-color: #ccc;
-	}
+uni-slider .uni-slider-disabled .uni-slider-track {
+  background-color: #ccc;
+}
 
-	uni-slider .uni-slider-disabled .uni-slider-thumb {
-		background-color: #FFF;
-		border-color: #ccc;
-	}
+uni-slider .uni-slider-disabled .uni-slider-thumb {
+  background-color: #FFF;
+  border-color: #ccc;
+}
 </style>

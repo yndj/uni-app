@@ -1,3 +1,7 @@
+import {
+  t
+} from 'uni-core/helpers/i18n'
+
 import getRealPath from 'uni-platform/helpers/get-real-path'
 
 export const showModal = {
@@ -15,15 +19,19 @@ export const showModal = {
   },
   cancelText: {
     type: String,
-    default: '取消'
+    default () {
+      return t('uni.showModal.cancel')
+    }
   },
   cancelColor: {
     type: String,
-    default: '#000000'
+    default: '#000'
   },
   confirmText: {
     type: String,
-    default: '确定'
+    default () {
+      return t('uni.showModal.confirm')
+    }
   },
   confirmColor: {
     type: String,
@@ -43,7 +51,7 @@ export const showToast = {
   icon: {
     default: 'success',
     validator (icon, params) {
-      if (['success', 'loading', 'none'].indexOf(icon) === -1) {
+      if (['success', 'loading', 'error', 'none'].indexOf(icon) === -1) {
         params.icon = 'success'
       }
     }
@@ -105,10 +113,13 @@ export const showActionSheet = {
   },
   itemColor: {
     type: String,
-    default: '#000000'
+    default: '#000'
   },
   visible: {
     type: Boolean,
     default: true
+  },
+  popover: {
+    type: Object
   }
 }

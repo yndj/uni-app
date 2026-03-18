@@ -41,10 +41,13 @@ function getSocket () {
   })
   socket.onclose(function (e) {
     const socketTaskId = e.id
+    const { code, reason } = e
     delete socketTasks[socketTaskId]
     publishStateChange({
       socketTaskId,
-      state: 'close'
+      state: 'close',
+      code,
+      reason
     })
   })
   return socket
@@ -61,7 +64,8 @@ const createSocketTaskById = function (socketTaskId, {
   socket.WebSocket({
     id: socketTaskId,
     url,
-    protocol: Array.isArray(protocols) ? protocols.join(',') : protocols
+    protocol: Array.isArray(protocols) ? protocols.join(',') : protocols,
+    header
   })
   socketTasks[socketTaskId] = socket
   return {

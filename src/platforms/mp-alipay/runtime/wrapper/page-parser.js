@@ -1,8 +1,13 @@
 import Vue from 'vue'
 
 import {
+  stringifyQuery
+} from 'uni-shared/query'
+
+import {
   initData,
   initHooks,
+  initUnknownHooks,
   handleEvent,
   initBehaviors,
   initVueComponent,
@@ -12,10 +17,14 @@ import {
 import {
   handleRef,
   handleLink,
+  handleWrap,
   initBehavior,
+  triggerEvent,
   initChildVues,
   initSpecialMethods
 } from './util'
+
+import { $emit } from 'uni-core/runtime/event-bus'
 
 const hooks = [
   'onShow',
@@ -30,12 +39,12 @@ const hooks = [
 hooks.push(...PAGE_EVENT_HOOKS)
 
 export default function parsePage (vuePageOptions) {
-  let [VueComponent, vueOptions] = initVueComponent(Vue, vuePageOptions)
+  const [VueComponent, vueOptions] = initVueComponent(Vue, vuePageOptions)
 
   const pageOptions = {
     mixins: initBehaviors(vueOptions, initBehavior),
     data: initData(vueOptions, Vue.prototype),
-    onLoad (args) {
+    onLoad (query) {
       const properties = this.props
 
       const options = {
@@ -52,8 +61,16 @@ export default function parsePage (vuePageOptions) {
       // 触发首次 setData
       this.$vm.$mount()
 
-      this.$vm.$mp.query = args // 兼容 mpvue
-      this.$vm.__call_hook('onLoad', args)
+      const copyQuery = Object.assign({}, query)
+      delete copyQuery.__id__
+
+      this.$page = {
+        fullPath: '/' + this.route + stringifyQuery(copyQuery)
+      }
+
+      this.options = query
+      this.$vm.$mp.query = query // 兼容 mpvue
+      this.$vm.__call_hook('onLoad', query)
     },
     onReady () {
       initChildVues(this)
@@ -65,12 +82,34 @@ export default function parsePage (vuePageOptions) {
       this.$vm.__call_hook('onUnload')
       this.$vm.$destroy()
     },
+    events: {
+      // 支付宝小程序有些页面事件只能放在events下
+      onBack () {
+        this.$vm.__call_hook('onBackPress')
+      },
+      onKeyboardHeight (res) {
+        $emit('uni:keyboardHeightChange', res)
+      }
+    },
     __r: handleRef,
     __e: handleEvent,
-    __l: handleLink
+    __l: handleLink,
+    __w: handleWrap,
+    triggerEvent
   }
 
-  initHooks(pageOptions, hooks, vuePageOptions)
+  Object.assign(pageOptions.events, vueOptions.events || {})
+
+  initHooks(pageOptions, hooks, vueOptions)
+  initUnknownHooks(pageOptions, vueOptions, ['onReady'])
+
+  if (Array.isArray(vueOptions.wxsCallMethods)) {
+    vueOptions.wxsCallMethods.forEach(callMethod => {
+      pageOptions[callMethod] = function (args) {
+        return this.$vm[callMethod](args)
+      }
+    })
+  }
 
   return pageOptions
 }

@@ -23,6 +23,7 @@ const {
 
 const {
   md5,
+  hasOwn,
   hasModule,
   hashify,
   camelize,
@@ -30,7 +31,11 @@ const {
   removeExt,
   normalizePath,
   getComponentName,
-  convertStaticStyle
+  convertStaticStyle,
+  getTemplatePath,
+  createSource,
+  deleteAsset,
+  showRunPrompt
 } = require('./util')
 
 const {
@@ -38,7 +43,6 @@ const {
   getPlatformProject,
   isSupportSubPackages,
   getPlatforms,
-  getPlatformGlobal,
   getPlatformScss,
   getPlatformSass,
   runByHBuilderX,
@@ -46,8 +50,6 @@ const {
   isInHBuilderXAlpha,
   getPlatformExts,
   getPlatformTarget,
-  getPlatformVue,
-  getPlatformCompiler,
   getShadowCss,
   getPlatformCssVars,
   getPlatformCssnano,
@@ -58,12 +60,33 @@ const {
   nvueJsPreprocessOptions,
   nvueCssPreprocessOptions,
   nvueHtmlPreprocessOptions,
-  devtoolModuleFilenameTemplate
+  getPlatformGlobal,
+  getPlatformStat,
+  getPlatformPush,
+  getPlatformUniCloud,
+  getDevUniConsoleCode
 } = require('./platform')
 
+const uts = require('./uts')
+
+const {
+  parseTheme,
+  initTheme
+} = require('./theme')
+
+const {
+  createRpx2Unit,
+  defaultRpx2Unit,
+  unitRE,
+  setRpx2Unit,
+  getRpx2Unit
+} = require('./style')
+
 module.exports = {
+  uts,
   md5,
   tags,
+  hasOwn,
   getJson,
   parseJson,
   hashify,
@@ -91,22 +114,34 @@ module.exports = {
   getPlatformExts,
   getPlatformTarget,
   getPlatformProject,
-  getPlatformVue,
-  getPlatformGlobal,
   getShadowCss,
   getPlatformCssVars,
   getPlatformCssnano,
-  getPlatformCompiler,
   getShadowTemplate,
   parsePagesJson,
   parseManifestJson,
   getComponentName,
   convertStaticStyle,
+  getTemplatePath,
+  createSource,
+  deleteAsset,
+  showRunPrompt,
   jsPreprocessOptions,
   cssPreprocessOptions,
   htmlPreprocessOptions,
   nvueJsPreprocessOptions,
   nvueCssPreprocessOptions,
   nvueHtmlPreprocessOptions,
-  devtoolModuleFilenameTemplate
+  getPlatformGlobal,
+  getPlatformStat,
+  getPlatformPush,
+  getPlatformUniCloud,
+  parseTheme,
+  initTheme,
+  getDevUniConsoleCode,
+  createRpx2Unit,
+  defaultRpx2Unit,
+  unitRE,
+  setRpx2Unit,
+  getRpx2Unit
 }

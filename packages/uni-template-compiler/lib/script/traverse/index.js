@@ -12,6 +12,7 @@ const {
   IDENTIFIER_STYLE,
   IDENTIFIER_EVENT,
   IDENTIFIER_GLOBAL,
+  IDENTIFIER_TEXT,
   PREFIX_ATTR,
   PREFIX_GLOBAL,
   PREFIX_METHOD,
@@ -19,12 +20,14 @@ const {
   PREFIX_FOR,
   PREFIX_CLASS,
   PREFIX_STYLE,
-  PREFIX_EVENT
+  PREFIX_EVENT,
+  PREFIX_TEXT
 } = require('../../constants')
 
 const {
   getInItIfStatement,
-  getDataExpressionStatement
+  getDataExpressionStatement,
+  getRenderSlotStatement
 } = require('./statements')
 
 const visitor = require('./visitor')
@@ -62,6 +65,10 @@ function reIdentifier (identifierArray) {
     [IDENTIFIER_ATTR]: {
       prefix: PREFIX_ATTR,
       id: 0
+    },
+    [IDENTIFIER_TEXT]: {
+      prefix: PREFIX_TEXT,
+      id: 0
     }
   }
   // TODO order
@@ -90,6 +97,8 @@ module.exports = function traverse (ast, state) {
   const blockStatementBody = []
   const objectPropertyArray = []
   const initExpressionStatementArray = []
+  const renderSlotStatementArray = []
+  const resolveSlotStatementArray = []
   // TODO 待重构，至少 filter，method 等实现方式要调整
   babelTraverse(ast, visitor, undefined, {
     scoped: [],
@@ -100,7 +109,9 @@ module.exports = function traverse (ast, state) {
     identifierArray: identifierArray,
     propertyArray: objectPropertyArray,
     declarationArray: blockStatementBody,
-    initExpressionStatementArray: initExpressionStatementArray
+    initExpressionStatementArray: initExpressionStatementArray,
+    renderSlotStatementArray,
+    resolveSlotStatementArray
   })
 
   if (initExpressionStatementArray.length) {
@@ -109,6 +120,14 @@ module.exports = function traverse (ast, state) {
 
   if (objectPropertyArray.length) {
     blockStatementBody.push(getDataExpressionStatement(objectPropertyArray))
+  }
+
+  if (renderSlotStatementArray.length) {
+    blockStatementBody.push(getRenderSlotStatement(state, renderSlotStatementArray))
+  }
+
+  if (resolveSlotStatementArray.length) {
+    blockStatementBody.push(...resolveSlotStatementArray)
   }
 
   reIdentifier(identifierArray)

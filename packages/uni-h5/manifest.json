@@ -35,6 +35,10 @@
             ]
         ]
     ],
+    "interceptors": [
+        "/core/service/api/base/interceptor.js",
+        []
+    ],
     "request": [
         "/platforms/h5/service/api/network/request.js",
         [
@@ -105,6 +109,10 @@
         "/platforms/h5/service/api/network/socket.js",
         []
     ],
+    "getUpdateManager": [
+        "/core/service/api/network/update.js",
+        []
+    ],
     "navigateTo": [
         "/platforms/h5/service/api/route/route.js",
         [
@@ -156,7 +164,7 @@
         true
     ],
     "setStorage": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -165,7 +173,7 @@
         ]
     ],
     "setStorageSync": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -174,7 +182,7 @@
         ]
     ],
     "getStorage": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -183,7 +191,7 @@
         ]
     ],
     "getStorageSync": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -192,15 +200,15 @@
         ]
     ],
     "getStorageInfo": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         []
     ],
     "getStorageInfoSync": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         []
     ],
     "removeStorage": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -209,7 +217,7 @@
         ]
     ],
     "removeStorageSync": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         [
             [
                 "/core/helpers/protocol/storage/storage.js",
@@ -218,11 +226,11 @@
         ]
     ],
     "clearStorage": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         []
     ],
     "clearStorageSync": [
-        "/core/service/api/storage/storage.js",
+        "/platforms/h5/service/api/storage/storage.js",
         []
     ],
     "getLocation": [
@@ -231,6 +239,10 @@
             [
                 "/core/helpers/protocol/location/get-location.js",
                 "getLocation"
+            ],
+            [
+                "/platforms/h5/service/api/network/request.js",
+                "request"
             ]
         ]
     ],
@@ -240,6 +252,26 @@
             [
                 "/core/helpers/protocol/location/choose-location.js",
                 "chooseLocation"
+            ],
+            [
+                "/platforms/h5/view/components/map/index.vue",
+                "Map"
+            ],
+            [
+                "/core/view/components/input/index.vue",
+                "Input"
+            ],
+            [
+                "/core/view/components/scroll-view/index.vue",
+                "ScrollView"
+            ],
+            [
+                "/platforms/h5/service/api/network/request.js",
+                "request"
+            ],
+            [
+                "/platforms/h5/service/api/location/get-location.js",
+                "getLocation"
             ],
             [
                 "/platforms/h5/components/system-routes/choose-location/index.vue",
@@ -255,19 +287,59 @@
                 "openLocation"
             ],
             [
+                "/platforms/h5/view/components/map/index.vue",
+                "Map"
+            ],
+            [
+                "/platforms/h5/service/api/network/request.js",
+                "request"
+            ],
+            [
+                "/platforms/h5/service/api/location/get-location.js",
+                "getLocation"
+            ],
+            [
                 "/platforms/h5/components/system-routes/open-location/index.vue",
                 "OpenLocation"
             ]
         ]
     ],
     "createMapContext": [
-        "/platforms/h5/service/api/context/map.js",
+        "/core/service/api/context/create-map-context.js",
         [
+            [
+                "/platforms/h5/service/api/context/operate-map-player.js",
+                "operateMapPlayer"
+            ],
             [
                 "/core/helpers/protocol/context/context.js",
                 "createMapContext"
             ]
         ]
+    ],
+    "onLocationChange": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
+    ],
+    "onLocationChangeError": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
+    ],
+    "startLocationUpdate": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
+    ],
+    "stopLocationUpdate": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
+    ],
+    "offLocationChange": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
+    ],
+    "offLocationChangeError": [
+        "/platforms/h5/service/api/location/location-change.js",
+        []
     ],
     "chooseImage": [
         "/platforms/h5/service/api/media/choose-image.js",
@@ -275,6 +347,15 @@
             [
                 "/core/helpers/protocol/media/choose-image.js",
                 "chooseImage"
+            ]
+        ]
+    ],
+    "chooseFile": [
+        "/platforms/h5/service/api/media/choose-file.js",
+        [
+            [
+                "/core/helpers/protocol/media/choose-file.js",
+                "chooseFile"
             ]
         ]
     ],
@@ -286,10 +367,34 @@
                 "previewImage"
             ],
             [
-                "/platforms/h5/components/system-routes/preview-image/index.vue",
+                "/core/view/components/swiper/index.vue",
+                "Swiper"
+            ],
+            [
+                "/core/view/components/swiper-item/index.vue",
+                "SwiperItem"
+            ],
+            [
+                "/core/view/components/movable-area/index.vue",
+                "MovableArea"
+            ],
+            [
+                "/core/view/components/movable-view/index.vue",
+                "MovableView"
+            ],
+            [
+                "/platforms/h5/components/app/popup/preview-image/index.vue",
                 "PreviewImage"
+            ],
+            [
+                "/platforms/h5/components/app/popup/mixins/preview-image.js",
+                "PreviewImageMixin"
             ]
         ]
+    ],
+    "closePreviewImage": [
+        "/platforms/h5/service/api/media/preview-image.js",
+        []
     ],
     "getImageInfo": [
         "/platforms/h5/service/api/media/get-image-info.js",
@@ -297,6 +402,24 @@
             [
                 "/core/helpers/protocol/media/get-image-info.js",
                 "getImageInfo"
+            ]
+        ]
+    ],
+    "getVideoInfo": [
+        "/platforms/h5/service/api/media/get-video-info.js",
+        [
+            [
+                "/core/helpers/protocol/media/get-video-info.js",
+                "getVideoInfo"
+            ]
+        ]
+    ],
+    "createAudioContext": [
+        "/core/service/api/context/audio.js",
+        [
+            [
+                "/core/helpers/protocol/context/context.js",
+                "createAudioContext"
             ]
         ]
     ],
@@ -314,8 +437,12 @@
         ]
     ],
     "createVideoContext": [
-        "/platforms/h5/service/api/context/video.js",
+        "/core/service/api/context/create-video-context.js",
         [
+            [
+                "/platforms/h5/service/api/context/operate-video-player.js",
+                "operateVideoPlayer"
+            ],
             [
                 "/core/helpers/protocol/context/context.js",
                 "createVideoContext"
@@ -331,6 +458,18 @@
         "/platforms/h5/service/api/device/get-system-info.js",
         [],
         true
+    ],
+    "getWindowInfo": [
+        "/platforms/h5/service/api/device/get-window-info.js",
+        []
+    ],
+    "getDeviceInfo": [
+        "/platforms/h5/service/api/device/get-system-info.js",
+        []
+    ],
+    "getAppBaseInfo": [
+        "/platforms/h5/service/api/device/get-system-info.js",
+        []
     ],
     "canIUse": [
         "/core/service/api/base/can-i-use.js",
@@ -350,34 +489,31 @@
         "/platforms/h5/service/api/device/network-info.js",
         []
     ],
+    "offNetworkStatusChange": [
+        "/platforms/h5/service/api/device/network-info.js",
+        []
+    ],
     "onAccelerometerChange": [
-        "/core/service/api/device/accelerometer.js",
-        [
-            [
-                "/platforms/h5/service/api/device/accelerometer.js",
-                "enableAccelerometer"
-            ]
-        ]
+        "/platforms/h5/service/api/device/accelerometer.js",
+        []
+    ],
+    "offAccelerometerChange": [
+        "/platforms/h5/service/api/device/accelerometer.js",
+        []
     ],
     "startAccelerometer": [
-        "/core/service/api/device/accelerometer.js",
-        [
-            [
-                "/platforms/h5/service/api/device/accelerometer.js",
-                "enableAccelerometer"
-            ]
-        ]
+        "/platforms/h5/service/api/device/accelerometer.js",
+        []
     ],
     "stopAccelerometer": [
-        "/core/service/api/device/accelerometer.js",
-        [
-            [
-                "/platforms/h5/service/api/device/accelerometer.js",
-                "enableAccelerometer"
-            ]
-        ]
+        "/platforms/h5/service/api/device/accelerometer.js",
+        []
     ],
     "onCompassChange": [
+        "/platforms/h5/service/api/device/compass.js",
+        []
+    ],
+    "offCompassChange": [
         "/platforms/h5/service/api/device/compass.js",
         []
     ],
@@ -398,6 +534,19 @@
             ]
         ]
     ],
+    "setClipboardData": [
+        "/platforms/h5/service/api/device/clipboard.js",
+        [
+            [
+                "/core/helpers/protocol/device/set-clipboard-data.js",
+                "setClipboardData"
+            ]
+        ]
+    ],
+    "getClipboardData": [
+        "/platforms/h5/service/api/device/clipboard.js",
+        []
+    ],
     "vibrateLong": [
         "/platforms/h5/service/api/device/vibrate.js",
         []
@@ -406,28 +555,32 @@
         "/platforms/h5/service/api/device/vibrate.js",
         []
     ],
-    "onBluetoothDeviceFound": [
-        "/core/service/api/device/bluetooth.js",
+    "onThemeChange": [
+        "/core/service/api/device/theme.js",
         []
     ],
-    "onBluetoothAdapterStateChange": [
-        "/core/service/api/device/bluetooth.js",
+    "offThemeChange": [
+        "/core/service/api/device/theme.js",
         []
     ],
-    "onBLEConnectionStateChange": [
-        "/core/service/api/device/bluetooth.js",
-        []
-    ],
-    "onBLECharacteristicValueChange": [
-        "/core/service/api/device/bluetooth.js",
+    "onUIStyleChange": [
+        "/core/service/api/device/theme.js",
         []
     ],
     "hideKeyboard": [
-        "/platforms/h5/service/api/device/hide-keyboard.js",
+        "/platforms/h5/service/api/keyboard/keyboard.js",
         []
     ],
     "onKeyboardHeightChange": [
-        "/core/service/api/ui/keyboard.js",
+        "/core/service/api/keyboard/keyboard.js",
+        []
+    ],
+    "offKeyboardHeightChange": [
+        "/core/service/api/keyboard/keyboard.js",
+        []
+    ],
+    "getSelectedTextRange": [
+        "/core/service/api/keyboard/get-selected-text-range.js",
         []
     ],
     "showToast": [
@@ -652,6 +805,15 @@
         "/platforms/h5/service/api/ui/window.js",
         []
     ],
+    "loadFontFace": [
+        "/core/service/api/ui/load-font-face.js",
+        [
+            [
+                "/core/helpers/protocol/ui/load-font-face.js",
+                "loadFontFace"
+            ]
+        ]
+    ],
     "startPullDownRefresh": [
         "/platforms/h5/service/api/ui/pull-down-refresh.js",
         []
@@ -661,8 +823,12 @@
         []
     ],
     "createSelectorQuery": [
-        "/platforms/h5/service/api/ui/create-selector-query.js",
+        "/core/service/api/ui/create-selector-query.js",
         [
+            [
+                "/platforms/h5/service/api/ui/request-component-info.js",
+                "requestComponentInfo"
+            ],
             [
                 "/core/view/bridge/subscribe/api/request-component-info.js",
                 "requestComponentInfo"
@@ -670,7 +836,7 @@
         ]
     ],
     "createIntersectionObserver": [
-        "/platforms/h5/service/api/ui/create-intersection-observer.js",
+        "/core/service/api/ui/create-intersection-observer.js",
         [
             [
                 "/core/view/bridge/subscribe/api/request-component-observer.js",
@@ -681,6 +847,79 @@
                 "destroyComponentObserver"
             ]
         ]
+    ],
+    "createMediaQueryObserver": [
+        "/core/service/api/ui/create-media-query-observer.js",
+        [
+            [
+                "/core/view/bridge/subscribe/api/request-media-query-observer.js",
+                "requestMediaQueryObserver"
+            ],
+            [
+                "/core/view/bridge/subscribe/api/request-media-query-observer.js",
+                "destroyMediaQueryObserver"
+            ]
+        ]
+    ],
+    "showTopWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "showLeftWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "showRightWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "hideTopWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "hideLeftWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "hideRightWindow": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "getTopWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "getLeftWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "getRightWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "setTopWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "setLeftWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "setRightWindowStyle": [
+        "/platforms/h5/service/api/ui/windows.js",
+        []
+    ],
+    "getLocale": [
+        "/core/service/api/ui/locale.js",
+        []
+    ],
+    "setLocale": [
+        "/core/service/api/ui/locale.js",
+        []
+    ],
+    "onLocaleChange": [
+        "/core/service/api/ui/locale.js",
+        []
     ],
     "$emit": [
         "/platforms/h5/service/api/base/event-bus.js",
@@ -718,6 +957,15 @@
             ]
         ]
     ],
+    "getFileInfo": [
+        "/platforms/h5/service/api/file/file.js",
+        [
+            [
+                "/core/helpers/protocol/file/file.js",
+                "getFileInfo"
+            ]
+        ]
+    ],
     "openDocument": [
         "/platforms/h5/service/api/file/open-document.js",
         [
@@ -728,7 +976,7 @@
         ]
     ],
     "createCanvasContext": [
-        "/platforms/h5/service/api/context/canvas.js",
+        "/core/service/api/context/canvas.js",
         [
             [
                 "/core/helpers/protocol/context/context.js",
@@ -737,7 +985,7 @@
         ]
     ],
     "canvasToTempFilePath": [
-        "/platforms/h5/service/api/context/canvas.js",
+        "/core/service/api/context/canvas.js",
         [
             [
                 "/core/helpers/protocol/context/canvas.js",
@@ -746,7 +994,7 @@
         ]
     ],
     "canvasPutImageData": [
-        "/platforms/h5/service/api/context/canvas.js",
+        "/core/service/api/context/canvas.js",
         [
             [
                 "/core/helpers/protocol/context/canvas.js",
@@ -755,7 +1003,7 @@
         ]
     ],
     "canvasGetImageData": [
-        "/platforms/h5/service/api/context/canvas.js",
+        "/core/service/api/context/canvas.js",
         [
             [
                 "/core/helpers/protocol/context/canvas.js",
@@ -781,5 +1029,46 @@
             ]
         ],
         true
+    ],
+    "setPageMeta": [
+        "/core/service/api/ui/set-page-meta.js",
+        []
+    ],
+    "preloadPage": [
+        "/platforms/h5/service/api/route/route.js",
+        [
+            [
+                "/core/helpers/protocol/route/route.js",
+                "preloadPage"
+            ]
+        ]
+    ],
+    "getLaunchOptionsSync": [
+        "/platforms/h5/service/api/plugin/get-launch-options-sync.js",
+        []
+    ],
+    "getEnterOptionsSync": [
+        "/platforms/h5/service/api/plugin/get-launch-options-sync.js",
+        []
+    ],
+    "invokePushCallback": [
+        "/core/service/api/plugin/push.js",
+        []
+    ],
+    "getPushClientId": [
+        "/core/service/api/plugin/push.js",
+        []
+    ],
+    "onPushMessage": [
+        "/core/service/api/plugin/push.js",
+        []
+    ],
+    "offPushMessage": [
+        "/core/service/api/plugin/push.js",
+        []
+    ],
+    "getFacialRecognitionMetaInfo": [
+        "/platforms/h5/service/api/plugin/facial-verify.js",
+        []
     ]
 }

@@ -1,27 +1,34 @@
 const {
   tags
 } = require('@dcloudio/uni-cli-shared')
-
-const {
-  isUnaryTag
-} = require('../util')
+const parser = require('@babel/parser')
+const t = require('@babel/types')
 
 const simplePathRE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['[^']*?']|\["[^"]*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*$/
 
+function isFunction (expr) {
+  try {
+    const body = parser.parse(`(${expr})`).program.body[0]
+    const expression = body.expression
+    return t.isFunctionDeclaration(body) || t.isArrowFunctionExpression(expression) || t.isFunctionExpression(
+      expression)
+  } catch (error) {}
+}
+
 function processEvent (expr, filterModules) {
   const isMethodPath = simplePathRE.test(expr)
-  if (isMethodPath) {
+  if (isMethodPath || isFunction(expr)) {
     if (filterModules.find(name => expr.indexOf(name + '.') === 0)) {
       return `
 $event = $handleWxsEvent($event);
-${expr}($event, $getComponentDescriptor())
+(${expr})($event, $getComponentDescriptor())
 `
     } else {
-      expr = expr + '($event)'
+      expr = `(${expr})(...arguments)`
     }
   }
   return `
-$event = $handleEvent($event);
+arguments[0] = $event = $handleEvent($event);
 ${expr}
 `
 }
@@ -32,8 +39,8 @@ function hasOwn (obj, key) {
 
 const deprecated = {
   events: {
-    'tap': 'click',
-    'longtap': 'longpress'
+    tap: 'click',
+    longtap: 'longpress'
   }
 }
 
@@ -45,12 +52,9 @@ function addTag (tag) {
 }
 
 module.exports = {
-  isUnaryTag,
-  preserveWhitespace: false,
+  h5: true,
   modules: [require('../format-text'), {
-    preTransformNode (el, {
-      warn
-    }) {
+    preTransformNode (el, options) {
       if (el.tag.indexOf('v-uni-') === 0) {
         addTag(el.tag.replace('v-uni-', ''))
       } else if (hasOwn(tags, el.tag)) {
@@ -77,31 +81,39 @@ module.exports = {
           })
         }
       }
-      if (el.events) {
+      if (el.events || el.nativeEvents) {
         filterModules = filterModules || []
         const {
           events: eventsMap
         } = deprecated
         // const warnLogs = new Set()
-        Object.keys(el.events).forEach(name => {
-          // 过时事件类型转换
-          if (eventsMap[name]) {
-            el.events[eventsMap[name]] = el.events[name]
-            delete el.events[name]
-            // warnLogs.add(`警告：事件${name}已过时，推荐使用${eventsMap[name]}代替`)
-            name = eventsMap[name]
-          }
-
-          const handlers = el.events[name]
-          if (Array.isArray(handlers)) {
-            handlers.forEach(handler => {
-              handler.value = processEvent(handler.value, filterModules)
-            })
-          } else {
-            handlers.value = processEvent(handlers.value, filterModules)
-          }
-        })
+        normalizeEvent(el.events, eventsMap, filterModules)
+        normalizeEvent(el.nativeEvents, eventsMap, filterModules)
       }
     }
   }]
+}
+
+function normalizeEvent (events, eventsMap, filterModules) {
+  if (!events) {
+    return
+  }
+  Object.keys(events).forEach(name => {
+    // 过时事件类型转换
+    if (eventsMap[name]) {
+      events[eventsMap[name]] = events[name]
+      delete events[name]
+      // warnLogs.add(`警告：事件${name}已过时，推荐使用${eventsMap[name]}代替`)
+      name = eventsMap[name]
+    }
+
+    const handlers = events[name]
+    if (Array.isArray(handlers)) {
+      handlers.forEach(handler => {
+        handler.value = processEvent(handler.value, filterModules)
+      })
+    } else {
+      handlers.value = processEvent(handlers.value, filterModules)
+    }
+  })
 }

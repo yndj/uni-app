@@ -479,7 +479,9 @@ function parseHTML (html, options) {
         : options.shouldDecodeNewlines;
       attrs[i] = {
         name: args[1],
-        value: decodeAttr(value, shouldDecodeNewlines)
+        value: decodeAttr(value, shouldDecodeNewlines),
+        // fixed by xxxxxx 标记 Boolean Attribute
+        bool: args[3] === undefined && args[4] === undefined && args[5] === undefined
       };
       if (process.env.NODE_ENV !== 'production' && options.outputSourceRange) {
         attrs[i].start = args.start + args[0].match(/^\s*/).length;
@@ -555,7 +557,7 @@ function parseHTML (html, options) {
 var splitRE = /\r?\n/g;
 var replaceRE = /./g;
 var isSpecialTag = makeMap('script,style,template', true);
-var isCustomBlock = makeMap('wxs,filter,sjs', true);// fixed by xxxxxx
+var isCustomBlock = makeMap('wxs,filter,sjs,renderjs', true);// fixed by xxxxxx
 
 /**
  * Parse a single-file component (*.vue) file into an SFC Descriptor Object.
@@ -1490,6 +1492,10 @@ function parse (
     {
       attrs.forEach(function (attr) {
         if(
+          (
+            !onRE.test(attr.name) && 
+            !slotRE.test(attr.name)
+          ) && // fixed by xxxxxx 忽略 v-slot
           attr.value === '' &&
           (attr.start + attr.name.length) === attr.end
         ){
@@ -1642,6 +1648,7 @@ function parse (
           // condense consecutive whitespaces into single space
           text = text.replace(whitespaceRE, ' ');
         }
+        text = text.trim();
         var res;
         var child;
         if (!inVPre && text !== ' ' && (res = parseText(text, delimiters))) {
@@ -2481,10 +2488,9 @@ function genWeexHandler (handler, options) {
   var code = handler.value;
   var isMethodPath = simplePathRE.test(code);
   var isFunctionExpression = fnExpRE.test(code);
-  var isFunctionCall = functionCallRE.test(code);
-
   // TODO: binding this to recyclable event handlers
   if (options.recyclable) {
+    var isFunctionCall = functionCallRE.test(code);
     if (isMethodPath) {
       return ("function($event){this." + code + "()}")
     }
@@ -2779,7 +2785,13 @@ var uid = 0;
  * directives subscribing to it.
  */
 var Dep = function Dep () {
-  this.id = uid++;
+  // fixed by xxxxxx (nvue vuex)
+  /* eslint-disable no-undef */
+  if(typeof SharedObject !== 'undefined'){
+    this.id = SharedObject.uid++;
+  } else {
+    this.id = uid++;
+  }
   this.subs = [];
 };
 
@@ -3404,39 +3416,6 @@ function assertObjectType (name, value, vm) {
 /*  */
 
 /*  */
-
-var callbacks = [];
-
-function flushCallbacks () {
-  var copies = callbacks.slice(0);
-  callbacks.length = 0;
-  for (var i = 0; i < copies.length; i++) {
-    copies[i]();
-  }
-}
-
-// The nextTick behavior leverages the microtask queue, which can be accessed
-// via either native Promise.then or MutationObserver.
-// MutationObserver has wider support, however it is seriously bugged in
-// UIWebView in iOS >= 9.3.3 when triggered in touch event handlers. It
-// completely stops working after triggering a few times... so, if native
-// Promise is available, we will use it:
-/* istanbul ignore next, $flow-disable-line */
-if (typeof Promise !== 'undefined' && isNative(Promise)) ; else if (!isIE && typeof MutationObserver !== 'undefined' && (
-  isNative(MutationObserver) ||
-  // PhantomJS and iOS 7.x
-  MutationObserver.toString() === '[object MutationObserverConstructor]'
-)) {
-  // Use MutationObserver where native Promise is not available,
-  // e.g. PhantomJS, iOS7, Android 4.4
-  // (#6466 MutationObserver is unreliable in IE11)
-  var counter = 1;
-  var observer = new MutationObserver(flushCallbacks);
-  var textNode = document.createTextNode(String(counter));
-  observer.observe(textNode, {
-    characterData: true
-  });
-} else if (typeof setImmediate !== 'undefined' && isNative(setImmediate)) ;
 
 /*  */
 
@@ -4581,8 +4560,8 @@ var props = {
 
 // The "unitary tag" means that the tag node and its children
 // must be sent to the native together.
-var isUnitaryTag = makeMap('cell,header,cell-slot,recycle-list', true);
-
+var isUnitaryTag = makeMap('cell,header,cell-slot,recycle-list,text,u-text', true);
+// fixed by xxxxxx
 function preTransformNode (el) {
   if (isUnitaryTag(el.tag) && !el.attrsList.some(function (item) { return item.name === 'append'; })) {
     el.attrsMap.append = 'tree';

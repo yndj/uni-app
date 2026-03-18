@@ -7,13 +7,28 @@ const {
 const {
   getPageSet,
   getJsonFileMap,
-  getChangedJsonFileMap
+  getChangedJsonFileMap,
+  supportGlobalUsingComponents
 } = require('@dcloudio/uni-cli-shared/lib/cache')
 
+const { createSource } = require('../shared')
+
 // 主要解决 extends 且未实际引用的组件
-const EMPTY_COMPONENT = `Component({})`
+const EMPTY_COMPONENT = 'Component({})'
 
 const usingComponentsMap = {}
+
+// 百度小程序动态组件库 usingSwanComponents 引用组件
+const mpBaiduDynamicLibs = [
+  'dynamicLib://editorLib/editor',
+  'dynamicLib://echartsLib/chart',
+  'dynamicLib://myModelviewer/modelviewer',
+  'dynamicLib://myDynamicLib/panoviewer',
+  'dynamicLib://myDynamicLib/spintileviewer',
+  'dynamicLib://myDynamicLib/vrvideo'
+]
+
+const AnalyzeDependency = require('@dcloudio/uni-mp-weixin/lib/independent-plugins/optimize-components-position/index')
 
 function analyzeUsingComponents () {
   if (!process.env.UNI_OPT_SUBPACKAGES) {
@@ -23,7 +38,7 @@ function analyzeUsingComponents () {
   const jsonFileMap = getJsonFileMap()
 
   // 生成所有组件引用关系
-  for (let name of jsonFileMap.keys()) {
+  for (const name of jsonFileMap.keys()) {
     const jsonObj = JSON.parse(jsonFileMap.get(name))
     const usingComponents = jsonObj.usingComponents
     if (!usingComponents || !pageSet.has(name)) {
@@ -51,7 +66,7 @@ function analyzeUsingComponents () {
         return false
       }
       pkgs.add(pkgRoot)
-      if (pkgs.length > 1) { // 被多个分包引用
+      if (pkgs.size > 1) { // 被多个分包引用
         return false
       }
     }
@@ -85,23 +100,74 @@ function analyzeUsingComponents () {
   //   }, {})
 }
 
+const parseRequirePath = path => /^[A-z]/.test(path) ? `./${path}` : path
+
+function normalizeUsingComponents (file, usingComponents) {
+  const names = Object.keys(usingComponents)
+  if (!names.length) {
+    return usingComponents
+  }
+  file = path.dirname('/' + file)
+  names.forEach(name => {
+    usingComponents[name] = normalizePath(parseRequirePath(path.relative(file, usingComponents[name])))
+  })
+  return usingComponents
+}
+
+const cacheFileMap = new Map()
 module.exports = function generateJson (compilation) {
   analyzeUsingComponents()
 
+  const emitFileMap = new Map([...cacheFileMap])
   const jsonFileMap = getChangedJsonFileMap()
-  for (let name of jsonFileMap.keys()) {
+  for (const name of jsonFileMap.keys()) {
     const jsonObj = JSON.parse(jsonFileMap.get(name))
-
+    if (process.env.UNI_PLATFORM === 'app-plus') { // App平台默认增加usingComponents,激活__wxAppCode__
+      jsonObj.usingComponents = jsonObj.usingComponents || {}
+    }
     // customUsingComponents
-    if (jsonObj.customUsingComponents && Object.keys(jsonObj.customUsingComponents)) {
+    if (jsonObj.customUsingComponents && Object.keys(jsonObj.customUsingComponents).length) {
       jsonObj.usingComponents = Object.assign(jsonObj.customUsingComponents, jsonObj.usingComponents)
     }
     delete jsonObj.customUsingComponents
     // usingGlobalComponents
-    if (jsonObj.usingGlobalComponents && Object.keys(jsonObj.usingGlobalComponents)) {
+    if (!supportGlobalUsingComponents && jsonObj.usingGlobalComponents && Object.keys(jsonObj.usingGlobalComponents).length) {
       jsonObj.usingComponents = Object.assign(jsonObj.usingGlobalComponents, jsonObj.usingComponents)
     }
-    delete jsonObj.usingGlobalComponents
+
+    // usingAutoImportComponents
+    if (jsonObj.usingAutoImportComponents && Object.keys(jsonObj.usingAutoImportComponents).length) {
+      jsonObj.usingComponents = Object.assign(jsonObj.usingAutoImportComponents, jsonObj.usingComponents)
+    }
+    delete jsonObj.usingAutoImportComponents
+
+    // 百度小程序插件内组件使用 usingSwanComponents
+    if (process.env.UNI_PLATFORM === 'mp-baidu') {
+      const usingComponents = jsonObj.usingComponents || {}
+      Object.keys(usingComponents).forEach(key => {
+        const value = usingComponents[key]
+        if (value.includes('://')) {
+          /**
+           * 部分动态库组件（如：editor）使用‘usingSwanComponents’ 引入
+           * 部分动态库组件（如：swan-sitemap-list）使用'usingComponents'引入
+           * 做白名单机制
+           */
+          if (mpBaiduDynamicLibs.includes(value)) {
+            delete usingComponents[key]
+            jsonObj.usingSwanComponents = jsonObj.usingSwanComponents || {}
+            jsonObj.usingSwanComponents[key] = value
+          }
+        }
+      })
+    }
+    // fix mp-alipay plugin
+    if (process.env.UNI_PLATFORM === 'mp-alipay' && name !== 'app.json') {
+      const usingComponents = jsonObj.usingComponents || {}
+      if (Object.values(usingComponents).find(value => value.startsWith('plugin://'))) {
+        const componentName = 'plugin-wrapper'
+        usingComponents[componentName] = '/' + componentName
+      }
+    }
 
     if (jsonObj.genericComponents && jsonObj.genericComponents.length) { // scoped slots
       // 生成genericComponents json
@@ -129,14 +195,7 @@ module.exports = function generateJson (compilation) {
       const scopedSlotComponentJsonSource = JSON.stringify(scopedSlotComponentJson, null, 2)
 
       scopedSlotComponents.forEach(scopedSlotComponent => {
-        compilation.assets[scopedSlotComponent] = {
-          size () {
-            return Buffer.byteLength(scopedSlotComponentJsonSource, 'utf8')
-          },
-          source () {
-            return scopedSlotComponentJsonSource
-          }
-        }
+        compilation.emitAsset(scopedSlotComponent, createSource(scopedSlotComponentJsonSource))
       })
     }
 
@@ -146,29 +205,61 @@ module.exports = function generateJson (compilation) {
       delete jsonObj.navigationBarShadow
     }
 
-    const source = JSON.stringify(jsonObj, null, 2)
+    if ((process.env.UNI_SUBPACKGE || process.env.UNI_MP_PLUGIN) && jsonObj.usingComponents) {
+      jsonObj.usingComponents = normalizeUsingComponents(name, jsonObj.usingComponents)
+    }
 
-    const jsFile = name.replace('.json', '.js')
-    if (
-      !['app.js', 'manifest.js', 'project.config.js', 'project.swan.js'].includes(jsFile) &&
-      !compilation.assets[jsFile]
-    ) {
-      compilation.assets[jsFile] = {
-        size () {
-          return Buffer.byteLength(EMPTY_COMPONENT, 'utf8')
-        },
-        source () {
-          return EMPTY_COMPONENT
-        }
-      }
-    }
-    compilation.assets[name] = {
-      size () {
-        return Buffer.byteLength(source, 'utf8')
-      },
-      source () {
-        return source
-      }
-    }
+    emitFileMap.set(name, jsonObj)
+    cacheFileMap.set(name, JSON.parse(JSON.stringify(jsonObj))) // 做一次拷贝，emitFileMap中内容在后面会被修改
   }
+
+  // 组件依赖分析
+  (new AnalyzeDependency()).init(emitFileMap, compilation)
+
+  for (const [name, jsonObj] of emitFileMap) {
+    if (name === 'app.json') { // 删除manifest.json携带的配置项
+      delete jsonObj.insertAppCssToIndependent
+      delete jsonObj.independent
+      delete jsonObj.copyWxComponentsOnDemand
+      if (process.env.UNI_PLATFORM === 'mp-weixin') {
+        require('./mp-weixin-uniad-app.json')(jsonObj, process.env.USE_UNI_AD)
+      } else if (process.env.UNI_PLATFORM === 'mp-alipay') {
+        require('./mp-alipay-uniad-app.json')(jsonObj, process.env.USE_UNI_AD_ALIPAY)
+      }
+    } else { // 删除用于临时记录的属性
+      delete jsonObj.usingGlobalComponents
+    }
+    emit(name, jsonObj, compilation)
+  }
+
+  if (process.env.UNI_USING_CACHE && jsonFileMap.size) {
+    setTimeout(() => {
+      require('@dcloudio/uni-cli-shared/lib/cache').store()
+    }, 50)
+  }
+}
+
+function emit (name, jsonObj, compilation) {
+  if (jsonObj.usingComponents) {
+    jsonObj.usingComponents = Object.assign({}, jsonObj.usingComponents)
+  }
+  const source = JSON.stringify(jsonObj, null, 2)
+
+  const jsFile = name.replace('.json', '.js')
+  if (
+    ![
+      'app.js',
+      'manifest.js',
+      'mini.project.js',
+      'ascf.config.js',
+      'quickapp.config.js',
+      'project.config.js',
+      'project.swan.js'
+    ].includes(
+      jsFile) &&
+    !compilation.getAsset(jsFile)
+  ) {
+    compilation.emitAsset(jsFile, createSource(EMPTY_COMPONENT))
+  }
+  compilation.emitAsset(name, createSource(source))
 }

@@ -7,8 +7,9 @@ import {
   requireNativePlugin
 } from '../bridge'
 
-const TABBAR_HEIGHT = 50
+import { useTabBarThemeChange } from './theme'
 
+const TABBAR_HEIGHT = 50
 let config
 
 /**
@@ -17,6 +18,10 @@ let config
 let visible = true
 
 let tabBar
+
+function setTabBarItems (style) {
+  tabBar && tabBar.setTabBarItems(style)
+}
 
 /**
  * 设置角标
@@ -49,7 +54,7 @@ function setTabBarBadge (type, index, text) {
 /**
  * 动态设置 tabBar 某一项的内容
  */
-function setTabBarItem (index, text, iconPath, selectedIconPath) {
+function setTabBarItem (index, text, iconPath, selectedIconPath, visible, iconfont) {
   const item = {
     index
   }
@@ -62,7 +67,20 @@ function setTabBarItem (index, text, iconPath, selectedIconPath) {
   if (selectedIconPath) {
     item.selectedIconPath = getRealPath(selectedIconPath)
   }
-  tabBar && tabBar.setTabBarItem(item)
+  if (iconfont !== undefined) {
+    item.iconfont = iconfont
+  }
+  if (visible !== undefined) {
+    item.visible = config.list[index].visible = visible
+    delete item.index
+
+    const tabbarItems = config.list.map(item => ({ visible: item.visible }))
+    tabbarItems[index] = item
+
+    setTabBarItems({ list: tabbarItems })
+  } else {
+    tabBar && tabBar.setTabBarItem(item)
+  }
 }
 /**
  * 动态设置 tabBar 的整体样式
@@ -73,7 +91,7 @@ function setTabBarStyle (style) {
 }
 /**
  * 隐藏 tabBar
- * @param {boolean} animation 是否需要动画效果 暂未支持
+ * @param {boolean} animation 是否需要动画效果
  */
 function hideTabBar (animation) {
   visible = false
@@ -83,7 +101,7 @@ function hideTabBar (animation) {
 }
 /**
  * 显示 tabBar
- * @param {boolean} animation 是否需要动画效果 暂未支持
+ * @param {boolean} animation 是否需要动画效果
  */
 function showTabBar (animation) {
   visible = true
@@ -91,6 +109,8 @@ function showTabBar (animation) {
     animation
   })
 }
+
+const maskClickCallback = []
 
 export default {
   id: '0',
@@ -103,27 +123,50 @@ export default {
     } catch (error) {
       console.log(`uni.requireNativePlugin("uni-tabview") error ${error}`)
     }
+    tabBar.onMaskClick(() => {
+      maskClickCallback.forEach((callback) => {
+        callback()
+      })
+    })
     tabBar && tabBar.onClick(({ index }) => {
+      const fromIndex = config.selectedIndex
       clickCallback(config.list[index], index)
+      const toIndex = config.selectedIndex
+      if (index !== toIndex) {
+        tabBar.switchSelect({
+          index: fromIndex
+        })
+      }
     })
     tabBar && tabBar.onMidButtonClick(() => {
       publish('onTabBarMidButtonTap', {})
     })
+
+    useTabBarThemeChange(tabBar, options)
   },
-  switchTab (page) {
-    const itemLength = config.list.length
+  indexOf (page) {
+    const config = this.config
+    const itemLength = config && config.list && config.list.length
     if (itemLength) {
       for (let i = 0; i < itemLength; i++) {
         if (
           config.list[i].pagePath === page ||
           config.list[i].pagePath === `${page}.html`
         ) {
-          tabBar && tabBar.switchSelect({
-            index: i
-          })
-          return true
+          return i
         }
       }
+    }
+    return -1
+  },
+  switchTab (page) {
+    const index = this.indexOf(page)
+    if (index >= 0) {
+      tabBar && tabBar.switchSelect({
+        index
+      })
+      this.config.selectedIndex = index
+      return true
     }
     return false
   },
@@ -144,11 +187,21 @@ export default {
       }
     })
   },
+  get config () {
+    return config || __uniConfig.tabBar
+  },
   get visible () {
     return visible
   },
   get height () {
-    return config && config.height ? parseFloat(config.height) : TABBAR_HEIGHT
+    const config = this.config
+    return (config && config.height ? parseFloat(config.height) : TABBAR_HEIGHT) + plus.navigator.getSafeAreaInsets().deviceBottom
+  },
+  // tabBar是否遮挡内容区域
+  get cover () {
+    const config = this.config
+    const array = ['extralight', 'light', 'dark']
+    return config && array.indexOf(config.blurEffect) >= 0
   },
   setStyle ({ mask }) {
     tabBar.setMask({
@@ -156,6 +209,10 @@ export default {
     })
   },
   addEventListener (name, callback) {
-    tabBar.onMaskClick(callback)
+    maskClickCallback.push(callback)
+  },
+  removeEventListener (name, callback) {
+    const callbackIndex = maskClickCallback.indexOf(callback)
+    maskClickCallback.splice(callbackIndex, 1)
   }
 }

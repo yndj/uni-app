@@ -1,3 +1,5 @@
+const { condense } = require('./util')
+
 var validDivisionCharRE = /[\w).+\-_$\]]/
 
 function parseFilters (exp) {
@@ -75,6 +77,7 @@ function parseFilters (exp) {
       }
       if (c === 0x2f) { // /
         var j = i - 1
+        /* eslint-disable no-void */
         var p = (void 0)
         // find first non-whitespace prev char
         for (; j >= 0; j--) {
@@ -163,7 +166,8 @@ module.exports = {
     if (children && children.length) {
       children.forEach(childEl => {
         if (childEl.text) {
-          const text = childEl.text.trim()
+          // fix: 和 vue3 一致压缩空白行为，防止去除 &nbsp; 等空白符
+          const text = condense(childEl.text)
           if (childEl.type === 2) {
             try {
               const {
